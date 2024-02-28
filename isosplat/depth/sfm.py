@@ -6,11 +6,13 @@ from pathlib import Path
 import os
 
 import tyro
+import numpy as np
 
 import enlighten
 
 import pycolmap
 from pycolmap import logging
+from PIL import Image
 
 # from .types import PointCloud
 
@@ -73,6 +75,71 @@ class SFM():
         for idx, rec in recs.items():
             logging.info(f"#{idx} {rec.summary()}")
 
+    def get_image(self):
+        images = self.reconstruction.images.items()
+        points = self.reconstruction.points3D.items()
+        cameras = self.reconstruction.cameras.items()
+
+        cam: pycolmap.Camera
+        point: pycolmap.point3D
+        img: pycolmap.Image
+
+        p = []
+        c = []
+
+        for point3D_id, point3D in points:
+            # print(point3D_id, point3D)
+            point = point3D
+            p.append(point.xyz)
+            c.append(point.color)
+
+        for camera_id, camera in cameras:
+            cam = camera
+            break
+
+        for image_id, image in images:
+            img = image
+            uv = cam.img_from_cam(img.cam_from_world * p)
+
+            arr = np.ones((cam.height, cam.width, 3), dtype=np.uint8) * 255
+            for i in range(len(c)):
+                x, y = uv[i]
+                col = c[i]
+
+                ix = int(x)
+                iy = int(y)
+
+                if ix >= 0 and ix < cam.width and iy >= 0 and iy < cam.height:
+                    arr[iy, ix] = col     
+                if ix-1 >= 0 and ix-1 < cam.width and iy >= 0 and iy < cam.height:
+                    arr[iy, ix-1] = col       
+                if ix+1 >= 0 and ix+1 < cam.width and iy >= 0 and iy < cam.height:
+                    arr[iy, ix+1] = col    
+                if ix >= 0 and ix < cam.width and iy-1 >= 0 and iy-1 < cam.height:
+                    arr[iy-1, ix] = col        
+                if ix >= 0 and ix < cam.width and iy+1 >= 0 and iy+1 < cam.height:
+                    arr[iy+1, ix] = col      
+    
+                if ix-2 >= 0 and ix-2 < cam.width and iy >= 0 and iy < cam.height:
+                    arr[iy, ix-2] = col       
+                if ix-1 >= 0 and ix-1 < cam.width and iy-1 >= 0 and iy-1 < cam.height:
+                    arr[iy-1, ix-1] = col    
+                if ix >= 0 and ix < cam.width and iy-2 >= 0 and iy-2 < cam.height:
+                    arr[iy-2, ix] = col        
+                if ix+1 >= 0 and ix+1 < cam.width and iy-1 >= 0 and iy-1 < cam.height:
+                    arr[iy-1, ix+1] = col  
+                if ix+2 >= 0 and ix+2 < cam.width and iy >= 0 and iy < cam.height:
+                    arr[iy, ix+2] = col       
+                if ix+1 >= 0 and ix+1 < cam.width and iy+1 >= 0 and iy+1 < cam.height:
+                    arr[iy+1, ix+1] = col    
+                if ix >= 0 and ix < cam.width and iy+2 >= 0 and iy+2 < cam.height:
+                    arr[iy+2, ix] = col        
+                if ix-1 >= 0 and ix-1 < cam.width and iy+1 >= 0 and iy+1 < cam.height:
+                    arr[iy+1, ix-1] = col  
+                
+
+            save_image = Image.fromarray(arr)
+            save_image.save(f"{self.sfm_path}/{image_id}.png")
 
 def main(
         img_path: Path,
@@ -80,6 +147,7 @@ def main(
 ) -> None:
     sfm = SFM(img_path)
     sfm.sfm(clean)
+    sfm.get_image()
 
 if __name__ == "__main__":
     tyro.cli(main)
