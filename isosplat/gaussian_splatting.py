@@ -8,7 +8,7 @@ import numpy as np
 
 from .camera import Camera
 from .optimizer import Optimizer
-from .sfm import PointCloud
+from .depth.sfm_types import PointCloud
 import isosplat.loss_functions as loss_functions
 import isosplat.utils as utils
 
@@ -24,9 +24,9 @@ BLOCK_WIDTH = 16
 
 class GaussianSplatting:
     def __init__(self, device: torch.device):
-        self.device = device
-        self.background = torch.zeros(3, device=self.device)
-        self.frames = []
+        self.device: torch.device = device
+        self.background: Tensor = torch.zeros(3, device=self.device)
+        self.frames: list = []
 
         self.num_points: int = 0
         self.means: Tensor
@@ -40,11 +40,11 @@ class GaussianSplatting:
 
     def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None):
         if load_path:
-            self.means = torch.load(f"{load_path}/means.pt")
-            self.scales = torch.load(f"{load_path}/scales.pt")
-            self.opacities = torch.load(f"{load_path}/opacities.pt")
-            self.sh_coeffs = torch.load(f"{load_path}/sh.pt")
-            self.quats = torch.load(f"{load_path}/quats.pt")
+            self.means = torch.load(load_path / "means.pt")
+            self.scales = torch.load(load_path / "scales.pt")
+            self.opacities = torch.load(load_path / "opacities.pt")
+            self.sh_coeffs = torch.load(load_path / "sh.pt")
+            self.quats = torch.load(load_path / "quats.pt")
             self.sh_degree = 4
             self.num_points = self.opacities.shape[0]
         elif point_cloud:
