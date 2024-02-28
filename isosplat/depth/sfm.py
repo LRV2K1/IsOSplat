@@ -99,18 +99,25 @@ class SFM():
 
         for image_id, image in images:
             img = image
-            uv = cam.img_from_cam(img.cam_from_world * p)
+            # cam is voor camera transform data zoals focus, img is voor de wereld transformatie
+            # uv = cam.img_from_cam(img.cam_from_world * p)
+            points2 = img.points2D
+            uv = [pon.xy for pon in points2]
 
             arr = np.ones((cam.height, cam.width, 3), dtype=np.uint8) * 255
-            for i in range(len(c)):
+            print(len(uv))
+            col = np.zeros(3, dtype=np.uint8)
+            print(col)
+            for i in range(len(uv)):
                 x, y = uv[i]
-                col = c[i]
+                # col = c[i]
+                # col = np.zeros(3)
 
                 ix = int(x)
                 iy = int(y)
 
                 if ix >= 0 and ix < cam.width and iy >= 0 and iy < cam.height:
-                    arr[iy, ix] = col     
+                    arr[iy, ix] = col  
                 if ix-1 >= 0 and ix-1 < cam.width and iy >= 0 and iy < cam.height:
                     arr[iy, ix-1] = col       
                 if ix+1 >= 0 and ix+1 < cam.width and iy >= 0 and iy < cam.height:
@@ -139,7 +146,7 @@ class SFM():
                 
 
             save_image = Image.fromarray(arr)
-            save_image.save(f"{self.sfm_path}/{image_id}.png")
+            save_image.save(f"{self.sfm_path}/{image.name}")
 
 def main(
         img_path: Path,
