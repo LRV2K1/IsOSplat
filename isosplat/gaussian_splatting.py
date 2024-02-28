@@ -133,7 +133,7 @@ class GaussianSplatting:
                 times[2] += t2
 
                 if self._is_refinement_iteration(itr):
-                    self._densify_and_prune(0.0002, 0.005, 2)
+                    self._densify_and_prune(0.0002, 0.005, 2, self.optimizer.get_learning_rate())
 
                 print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
 
@@ -226,15 +226,15 @@ class GaussianSplatting:
         t1 = time.time() - start
         return out_img, out_alpha, t0, t1
 
-    def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float):
-        self._clone(grad_threshold, size_threshold)
-        self._split(grad_threshold, size_threshold)
+    def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
+        self._clone(grad_threshold, size_threshold, extend)
+        self._split(grad_threshold, size_threshold, extend)
 
         opacity_threshold = utils.inverse_sigmoid(opacity_threshold)
         mask = (self.opacities <= opacity_threshold).squeeze()
         self._update_tensors(self.optimizer.prune_optimizer(~mask))
 
-    def _split(self, grad_threshold: float, size_threshold: float):
+    def _split(self, grad_threshold: float, size_threshold: float, extend: float):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         padded_view_space_gradients = torch.zeros(self.num_points - view_space_gradients.shape[0],
                                                   view_space_gradients.shape[1], device=self.device)
@@ -250,7 +250,7 @@ class GaussianSplatting:
         padded_grad = torch.cat((torch.zeros_like(mask_positional_gradient, device=self.device),
                                  mask_positional_gradient))
 
-        new_means = ((self.means[mask]).repeat(2, 1)) + padded_grad
+        new_means = ((self.means[mask]).repeat(2, 1)) + (padded_grad * extend)
         new_scales = ((self.scales[mask]).repeat(2, 1)) / 1.6
         new_quats = (self.quats[mask]).repeat(2, 1)
         new_sh_coeffs = (self.sh_coeffs[mask]).repeat(2, 1, 1)
@@ -266,13 +266,13 @@ class GaussianSplatting:
         self.optimizer.prune_optimizer(~mask)
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
 
-    def _clone(self, grad_threshold: float, size_threshold: float):
+    def _clone(self, grad_threshold: float, size_threshold: float, extend: float):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         mask = torch.where(torch.norm(view_space_gradients, dim=-1) > grad_threshold, True, False)
         mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values <= size_threshold)
 
         positional_gradient = _ProjectGaussians.getPositionalGradient()[mask]
-        new_means = self.means[mask] + positional_gradient
+        new_means = self.means[mask] + (positional_gradient * extend)
         new_scales = self.scales[mask]
         new_quats = self.quats[mask]
         new_sh_coeffs = self.sh_coeffs[mask]

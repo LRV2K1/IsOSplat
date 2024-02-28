@@ -18,6 +18,7 @@ class Optimizer:
             )
             optimizable_tensors[key] = tensor
 
+        self.lr = lr
         self.optimizer = optim.Adam(optimizer_params, lr)
         return optimizable_tensors
 
@@ -37,7 +38,11 @@ class Optimizer:
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == name:
                 param_group['lr'] = lr
+                self.lr = lr
                 return lr
+            
+    def get_learning_rate(self):
+        return self.lr
 
     def prune_optimizer(self, mask: Tensor) -> dict[str, Tensor]:
         optimizable_tensors = {}
