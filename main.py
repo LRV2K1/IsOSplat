@@ -30,8 +30,7 @@ def image_path_to_tensor(image_path: Path) -> tuple[Tensor, Tensor]:
 
 
 def create_camera(width: int, height: int, cam_path: Path, device: torch.device) -> Camera:
-    fov = math.pi / 2.0
-    camera = Camera(width, height, fov, fov, 0, 10, device)
+    camera = Camera(width, height, width/2, height/2, 0, 10, device)
     with open(cam_path) as cam:
         lines = cam.readlines()
         pos = lines[0].split(',')
@@ -64,9 +63,9 @@ def main(
             filename = os.fsdecode(file)
             if filename.endswith(".cam"):
                 name = filename.split('.')[0]
-                gt_image, gt_alpha = image_path_to_tensor(f"{img_path}/{name}.png")
+                gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
                 width, height = gt_image.shape[0], gt_image.shape[1]
-                camera = create_camera(width, height, f"{img_path}/{name}.cam", device)
+                camera = create_camera(width, height, img_path / f"{name}.cam", device)
                 data.append((gt_image, gt_alpha, camera, name))
     else:
         gt_image = torch.ones((height, width, 3)) * 1.0
@@ -76,12 +75,10 @@ def main(
 
         gt_alpha = torch.ones((height, width)) * 1.0
 
-        fov = math.pi / 2.0
-        camera = Camera(width, height, fov, fov, 0, 10, device)
+        camera = Camera(width, height, width/2, height/2, 0, 10, device)
         data = [(gt_image, gt_alpha, camera, "test")]
 
-    fov = math.pi / 2.0
-    camera = Camera(400, 400, fov, fov, 0, 10, device)
+    camera = Camera(400, 400, 200, 200, 0, 10, device)
 
     trainer = GaussianSplatting(device)
     trainer.init_gaussians(splats, load_path, None)
@@ -94,8 +91,8 @@ def main(
     trainer.verify(data, save_path)
     if save_path:
         trainer.save(save_path)
-        trainer.orbit_render(width, height, camera, save_path)
-        # trainer.zoomRender(width, height, camera, save_path)
+        trainer.orbit_render(camera, save_path)
+        # trainer.zoomRender(camera, save_path)
 
 
 if __name__ == '__main__':

@@ -7,13 +7,16 @@ class Camera:
 
     def __init__(self,
                  width: int, height: int,
-                 fovx: float, fovy: float,
+                 focalx: float, focaly: float,
                  near: float, far: float,
                  device: torch.device):
         self.device = device
 
-        self.focalx = 0.5 * float(width) / math.tan(0.5 * fovx)
-        self.focaly = 0.5 * float(height) / math.tan(0.5 * fovy)
+        self.width = width
+        self.height = height
+
+        self.focalx = focalx
+        self.focaly = focaly
 
         fov_width = (2 * self.focalx) / width
         fov_height = (2 * self.focaly) / height
@@ -101,6 +104,9 @@ class Camera:
 
     def get_focal(self) -> tuple[float, float]:
         return self.focalx, self.focaly
+
+    def get_size(self) -> tuple[int, int]:
+        return self.width, self.height
 
     def set_position(self, posx: float, posy: float, posz: float):
         self.translation_mat = torch.transpose(torch.tensor(

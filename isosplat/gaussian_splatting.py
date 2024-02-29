@@ -123,8 +123,7 @@ class GaussianSplatting:
             for gt_view, gt_alpha, camera, _ in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
-                width, height = gt_view.shape[0], gt_view.shape[1]
-                nv_view, nv_alpha, t0, t1 = self.rasterize(width, height, camera)
+                nv_view, nv_alpha, t0, t1 = self.rasterize(camera)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
                 t2 = self.optimizer.back_propagate_loss(loss)
 
@@ -156,6 +155,12 @@ class GaussianSplatting:
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
+        torch.save(self.sh_coeffs, f"{save_path}/sh.pt")  # sh_coeffs
+        torch.save(self.means, f"{save_path}/means.pt")  # means
+        torch.save(self.scales, f"{save_path}/scales.pt")  # scales
+        torch.save(self.opacities, f"{save_path}/opacities.pt")  # opacities
+        torch.save(self.quats, f"{save_path}/quats.pt")  # quats
+
         self.frames = [Image.fromarray(frame) for frame in self.frames]
         self.frames[0].save(
             f"{save_path}/training.gif",
@@ -171,21 +176,19 @@ class GaussianSplatting:
             optimize=False,
         )
 
-        torch.save(self.sh_coeffs, f"{save_path}/sh.pt")  # sh_coeffs
-        torch.save(self.means, f"{save_path}/means.pt")  # means
-        torch.save(self.scales, f"{save_path}/scales.pt")  # scales
-        torch.save(self.opacities, f"{save_path}/opacities.pt")  # opacities
-        torch.save(self.quats, f"{save_path}/quats.pt")  # quats
-
     def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
         return spherical_harmonics(degrees_to_use, view_dirs, sh_coeffs)
 
-    def rasterize(self, width: int, height: int, camera: Camera) -> tuple[Tensor, Tensor, float, float]:
+    def rasterize(self, camera: Camera, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
         view_mat, project_mat = camera.get_view_and_project_matrix()
         focalx, focaly = camera.get_focal()
+        width, height = camera.get_size()
 
         start = time.time()  # get iteration start time
+
+        if color == None:
+            color = self.background
 
         xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
             self.means,
@@ -218,13 +221,18 @@ class GaussianSplatting:
             height,
             width,
             BLOCK_WIDTH,
-            self.background,
+            color,
             True
         )
 
         torch.cuda.synchronize()
         t1 = time.time() - start
         return out_img, out_alpha, t0, t1
+
+    def render(self, camera: Camera, color: Optional[Tensor] = None) -> tuple[Tensor, float, float]:
+        with torch.no_grad():
+            out_img, _, t0, t1 = self.rasterize(camera, color)
+            return out_img, t0, t1
 
     def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
         self._clone(grad_threshold, size_threshold, extend)
@@ -300,8 +308,7 @@ class GaussianSplatting:
             for gt_view, gt_alpha, camera, name in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
-                width, height = gt_view.shape[0], gt_view.shape[1]
-                nv_view, nv_alpha, _, _ = self.rasterize(width, height, camera)
+                nv_view, nv_alpha, _, _ = self.rasterize(camera)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
 
                 print(f"Image: {name}, Loss:{loss.item()}")
@@ -312,7 +319,7 @@ class GaussianSplatting:
                     image = Image.fromarray((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                     image.save(f"{save_path}/{name}_render.png")
 
-    def orbit_render(self, width: int, height: int, camera: Camera, save_path: Path):
+    def orbit_render(self, camera: Camera, save_path: Path):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
@@ -321,31 +328,30 @@ class GaussianSplatting:
         anglv = 0.0
         dis = 0.0
 
-        with torch.no_grad():
-            for itr in range(200):
-                # set camera
-                if itr < 100:
-                    anglh = (math.pi / 50) * itr
-                else:
-                    anglh = (math.pi / 50) * (99 - (itr % 100))
+        for itr in range(200):
+            # set camera
+            if itr < 100:
+                anglh = (math.pi / 50) * itr
+            else:
+                anglh = (math.pi / 50) * (99 - (itr % 100))
 
-                # if (itr < 50):
-                #     anglv = (math.pi / 200) * itr
-                # elif (itr < 150):
-                #     anglv = (math.pi / 200) * (49 - (itr - 50))
-                # else:
-                #     anglv = (math.pi / 200) * (-50 + (itr % 50))
+            # if (itr < 50):
+            #     anglv = (math.pi / 200) * itr
+            # elif (itr < 150):
+            #     anglv = (math.pi / 200) * (49 - (itr - 50))
+            # else:
+            #     anglv = (math.pi / 200) * (-50 + (itr % 50))
 
-                if (itr % 100) < 50:
-                    dis += 1
-                else:
-                    dis -= 1
+            if (itr % 100) < 50:
+                dis += 1
+            else:
+                dis -= 1
 
-                camera.orbit(0.0, 0.0, 0.0, 8.0 + (dis / 25.0), anglh, anglv)
+            camera.orbit(0.0, 0.0, 0.0, 8.0 + (dis / 25.0), anglh, anglv)
 
-                out_img, _, _, _ = self.rasterize(width, height, camera)
+            out_img, _, _ = self.render(camera)
 
-                frames.append((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
+            frames.append((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
         frames = [Image.fromarray(frame) for frame in frames]
         frames[0].save(
             f"{save_path}/render.gif",
@@ -356,26 +362,25 @@ class GaussianSplatting:
             loop=0,
         )
 
-    def zoom_render(self, width: int, height: int, camera: Camera, save_path: Path):
+    def zoom_render(self, camera: Camera, save_path: Path):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
         frames = []
         dis = 0
 
-        with torch.no_grad():
-            for itr in range(200):
-                # set camera
-                if itr < 100:
-                    dis += 1
-                else:
-                    dis -= 1
+        for itr in range(200):
+            # set camera
+            if itr < 100:
+                dis += 1
+            else:
+                dis -= 1
 
-                camera.distance(0.0, 0.0, 0.0, 7.0 + dis)
+            camera.distance(0.0, 0.0, 0.0, 7.0 + dis)
 
-                out_img, _, _, _ = self.rasterize(width, height, camera)
+            out_img, _, _ = self.render(camera)
 
-                frames.append((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
+            frames.append((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
         frames = [Image.fromarray(frame) for frame in frames]
         frames[0].save(
             f"{save_path}/render.gif",
