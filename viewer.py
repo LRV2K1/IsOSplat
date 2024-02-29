@@ -3,6 +3,7 @@ import tyro
 from pathlib import Path
 from isosplat.gaussian_splatting import GaussianSplatting
 from isosplat.camera import Camera
+import math
 
 from tkinter import *
 from tkinter.ttk import *
@@ -21,6 +22,7 @@ class RendererThread:
 
         self.renderer = GaussianSplatting(device)
         self.renderer.init_gaussians(0, load_path)
+        print(f"Number rendered gaussians: {self.renderer.num_points}")
 
         self.camera = Camera(400, 400, 200, 200, 0, 10, device)
 
@@ -38,11 +40,15 @@ class RendererThread:
 
     def add_angle(self, anglh: float, anglv: float):
         self.anglh += anglh
+        self.anglh = self.anglh % (2 * math.pi)
         self.anglv += anglv
+        self.anglv = min(self.anglv, 0.5*math.pi)
+        self.anglv = max(self.anglv, -0.5*math.pi)
         self._update_camera()
 
     def add_distance(self, dis: float):
         self.dis += dis
+        self.dis = max(0.1, self.dis)
         self._update_camera()
 
     def _update_camera(self):

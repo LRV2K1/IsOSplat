@@ -91,7 +91,7 @@ def main(
     trainer.verify(data, save_path)
     if save_path:
         trainer.save(save_path)
-        trainer.orbit_render(camera, save_path)
+        # trainer.orbit_render(camera, save_path)
         # trainer.zoomRender(camera, save_path)
 
 

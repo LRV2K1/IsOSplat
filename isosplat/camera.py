@@ -21,7 +21,7 @@ class Camera:
         fov_width = (2 * self.focalx) / width
         fov_height = (2 * self.focaly) / height
         a = (far + near) / (far - near)
-        b = -(far * near) / (far - near)
+        b = -(2 * far * near) / (far - near)
 
         self.perspective_project_mat = torch.tensor(
             [
@@ -109,15 +109,15 @@ class Camera:
         return self.width, self.height
 
     def set_position(self, posx: float, posy: float, posz: float):
-        self.translation_mat = torch.transpose(torch.tensor(
+        self.translation_mat = torch.tensor(
             [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [posx, posy, posz, 1.0]
+                [1.0, 0.0, 0.0, posx],
+                [0.0, 1.0, 0.0, posy],
+                [0.0, 0.0, 1.0, posz],
+                [0.0, 0.0, 0.0, 1.0]
             ],
             device=self.device
-        ), 0, 1)
+        )
         self.viewMatrixUpdate = True
 
     def set_view_direction(self, dirx, diry, dirz):
@@ -152,13 +152,13 @@ class Camera:
         # direction, right, and up vectors of the camera
         d = torch.tensor([camx - posx, camy - posy, camz - posz], device=self.device)
         d = d / torch.linalg.vector_norm(d)
-        r = torch.tensor([camz - posz, 0.0, -camx - posx], device=self.device)
-        r = r / torch.linalg.vector_norm(r)
-        u = torch.linalg.cross(d, r)
+        l = torch.tensor([camz - posz, 0.0, -camx - posx], device=self.device)
+        l = l / torch.linalg.vector_norm(l)
+        u = torch.linalg.cross(d, l)
 
         self.rotation_mat = torch.tensor(
             [
-                [r[0], r[1], r[2], 0.0],
+                [l[0], l[1], l[2], 0.0],
                 [u[0], u[1], u[2], 0.0],
                 [d[0], d[1], d[2], 0.0],
                 [0.0, 0.0, 0.0, 1.0]
@@ -175,12 +175,12 @@ class Camera:
         d = torch.tensor([camx - posx, camy - posy, camz - posz], device=self.device)
         d = d / torch.linalg.vector_norm(d)
         u = torch.tensor([topx, topy, topz], device=self.device)
-        u = u / torch.linalg.vector_norm(d)
-        r = torch.linalg.cross(d, u)
+        u = u / torch.linalg.vector_norm(u)
+        l = torch.linalg.cross(d, u) * -1.0
 
         self.rotation_mat = torch.tensor(
             [
-                [r[0], r[1], r[2], 0.0],
+                [l[0], l[1], l[2], 0.0],
                 [u[0], u[1], u[2], 0.0],
                 [d[0], d[1], d[2], 0.0],
                 [0.0, 0.0, 0.0, 1.0]
@@ -192,8 +192,12 @@ class Camera:
     def orbit(self, posx: float, posy: float, posz: float, dis: float, anglh: float, anglv: float):
         anglh = anglh - math.pi / 2
         tempx = math.cos(anglh)
-        tempy = math.sin(anglv)
         tempz = math.sin(anglh)
 
-        self._distance(tempx, tempy, tempz, posx, posy, posz, dis)
+        y = math.sin(anglv)
+        xz = math.cos(anglv)
+        x = tempx * xz
+        z = tempz * xz
+
+        self._distance(x, y, z, posx, posy, posz, dis)
         self.look_at(posx, posy, posz)
