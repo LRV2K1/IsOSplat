@@ -17,7 +17,7 @@ import threading
 
 
 class RendererThread:
-    def __init__(self, load_path: Path, panel: Label):
+    def __init__(self, load_path: Path):
         device = torch.device("cuda:0")
 
         self.renderer = GaussianSplatting(device)
@@ -25,12 +25,6 @@ class RendererThread:
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
         self.camera = Camera(400, 400, 200, 200, 0, 10, device)
-
-        self.thread = threading.Thread(target=self._run)
-        self.running = False
-
-        self.panel = panel
-        self.prev_image: ImageTk.PhotoImage
 
         self.anglh = 0.0
         self.anglv = 0.0
@@ -54,25 +48,10 @@ class RendererThread:
     def _update_camera(self):
         self.camera.orbit(0.0, 0.0, 0.0, self.dis, self.anglh, self.anglv)
 
-    def start(self):
-        self.running = True
-        self.thread.start()
-
-    def stop(self):
-        self.running = False
-        self.thread.join()
-
-    def _run(self):
-        while self.running:
-            out_img, _, _ = self.renderer.render(self.camera, self.background)
-            img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
-            img = img.resize((800, 800))
-            img = ImageTk.PhotoImage(img)
-            try:
-                self.panel.configure(image=img)
-                self.prev_image = img
-            except Exception as e:
-                print("display failure:   ", e)
+    def render(self, width: int, height: int) -> Image:
+        out_img, _, _ = self.renderer.render(self.camera, self.background)
+        img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
+        return img.resize((width, height))
 
 
 class Viewer:
@@ -80,6 +59,7 @@ class Viewer:
         self.root = Tk()
         self.root.title("IsOSplat")
         self.root.geometry("800x800")
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.root.bind("<B1-Motion>", self._drag)
         self.root.bind("<Button-1>", self._clicked)
@@ -89,16 +69,29 @@ class Viewer:
         self.panel = Label(self.root)
         self.panel.place(x=0, y=0)
 
-        self.renderer = RendererThread(load_path, self.panel)
-        self.renderer.start()
+        self.prev_image: ImageTk.PhotoImage
+
+        self.renderer = RendererThread(load_path)
 
         self.dragging = False
         self.last_x = 0.0
         self.last_y = 0.0
 
     def run(self):
+        # self.renderer.start()
+        self.render_loop()
         self.root.mainloop()
-        self.renderer.stop()
+
+    def render_loop(self):
+        img = self.renderer.render(800, 800)
+        final_img = ImageTk.PhotoImage(img)
+        self.panel.configure(image=final_img)
+        self.prev_image = final_img
+        self.root.after(20, self.render_loop)
+
+    def _on_close(self):
+        print("close")
+        self.root.destroy()
 
     def _drag(self, event):
         if not self.dragging:
@@ -128,41 +121,6 @@ def main(
 ) -> None:
     viewer = Viewer(load_path)
     viewer.run()
-
-    # root = Tk()
-    # root.title("IsOSplat")
-    # root.geometry("800x800")
-    #
-    # panel = Label(root)
-    # panel.place(x=0, y=0)
-    #
-    # renderer = RendererThread(load_path, panel)
-    # renderer.start()
-    #
-    # # label = Label(root, text="Hello World !")
-    # # # label.pack()
-    # # label.place(x=0, y=0)
-    # #
-    # # frame = Frame(root)
-    # # frame.place(x=0, y=0)
-    # #
-    # # button = Button(root, text="button", command=clicked)
-    # # # button.pack()
-    # # button.place(x=10,y=10)
-    #
-    # # root.bind("<Button-1>", lambda x: print("Left click"))
-    # # root.bind("<Button>", lambda x: print("Right click"))
-    # # root.bind("<ButtonRelease-1>", lambda x: print("Left release"))
-    # # root.bind("<ButtonRelease>", lambda x: print("Right release"))
-    #
-    # # root.bind("<B1-Motion>", drag)
-    #
-    # root.mainloop()
-    # renderer.stop()
-
-
-def clicked():
-    print("click")
 
 
 if __name__ == '__main__':
