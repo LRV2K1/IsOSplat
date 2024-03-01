@@ -8,7 +8,8 @@ class Camera:
     def __init__(self,
                  width: int, height: int,
                  focalx: float, focaly: float,
-                 near: float, far: float,
+                 cx: float, cy: float,
+                 # near: float, far: float,
                  device: torch.device):
         self.device = device
 
@@ -18,10 +19,15 @@ class Camera:
         self.focalx = focalx
         self.focaly = focaly
 
+        self.cx = cx
+        self.cy = cy
+
         fov_width = (2 * self.focalx) / width
         fov_height = (2 * self.focaly) / height
+        far = 10
+        near = 1
         a = (far + near) / (far - near)
-        b = -(2 * far * near) / (far - near)
+        b = -(far * near) / (far - near)
 
         self.perspective_project_mat = torch.tensor(
             [
@@ -104,6 +110,9 @@ class Camera:
 
     def get_focal(self) -> tuple[float, float]:
         return self.focalx, self.focaly
+
+    def get_principal(self) -> tuple[float, float]:
+        return self.cx, self.cy
 
     def get_size(self) -> tuple[int, int]:
         return self.width, self.height

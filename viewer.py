@@ -13,8 +13,6 @@ from torch import Tensor
 from PIL import Image, ImageTk
 import numpy as np
 
-import threading
-
 
 class RendererThread:
     def __init__(self, load_path: Path):
@@ -24,7 +22,7 @@ class RendererThread:
         self.renderer.init_gaussians(0, load_path)
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
-        self.camera = Camera(400, 400, 200, 200, 0, 10, device)
+        self.camera = Camera(400, 400, 480, 480, 200, 200, device)
 
         self.anglh = 0.0
         self.anglv = 0.0
@@ -32,6 +30,10 @@ class RendererThread:
         self.size = 1.0
 
         self.background: Tensor = torch.ones(3, device=device)
+        self.other_background: Tensor = torch.zeros(3, device=device)
+
+    def toggle_background(self):
+        self.background, self.other_background = self.other_background, self.background
 
     def add_angle(self, anglh: float, anglv: float):
         self.anglh += anglh
@@ -82,6 +84,9 @@ class Viewer:
         self.label = Label(self.root, text=f"{self.slider.get():.2f}")
         self.label.place(x=120, y=15)
 
+        self.background_toggle = Button(self.root, text="Background", command=self._toggle_background)
+        self.background_toggle.place(relx=1, x=-10, y=10, anchor=NE)
+
         self.prev_image: ImageTk.PhotoImage
 
         self.renderer = RendererThread(load_path)
@@ -106,6 +111,9 @@ class Viewer:
         self.panel.configure(image=final_img)
         self.prev_image = final_img
         self.root.after(20, self.render_loop)
+
+    def _toggle_background(self):
+        self.renderer.toggle_background()
 
     def _on_close(self):
         print("close")

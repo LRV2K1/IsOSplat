@@ -40,6 +40,7 @@ class GaussianSplatting:
 
     def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None):
         if load_path:
+            print("Loading existing gaussians")
             self.means = torch.load(load_path / "means.pt")
             self.scales = torch.load(load_path / "scales.pt")
             self.opacities = torch.load(load_path / "opacities.pt")
@@ -48,9 +49,11 @@ class GaussianSplatting:
             self.sh_degree = 4
             self.num_points = self.opacities.shape[0]
         elif point_cloud:
+            print("Creating gaussians from SFM point cloud")
             print("sfm")
             # TODO sfm
         else:
+            print("Randomly initialize gaussians")
             self.num_points = splats
 
             self.means = 2 * (torch.rand(self.num_points, 3, device=self.device) - 0.5)
@@ -184,6 +187,7 @@ class GaussianSplatting:
         view_mat, project_mat = camera.get_view_and_project_matrix()
         focalx, focaly = camera.get_focal()
         width, height = camera.get_size()
+        cx, cy = camera.get_principal()
 
         start = time.time()  # get iteration start time
 
@@ -199,8 +203,8 @@ class GaussianSplatting:
             project_mat,
             focalx,
             focaly,
-            width / 2,
-            height / 2,
+            cx,
+            cy,
             height,
             width,
             BLOCK_WIDTH

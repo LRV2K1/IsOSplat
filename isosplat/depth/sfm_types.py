@@ -1,6 +1,7 @@
 from typing import NewType
 
 
-Point = NewType('Point', (float, float, float))
-PointCloud = NewType('PointCloud', Point)
+PointCloud = NewType('PointCloud', list[tuple[tuple[float, float, float], tuple[int, int, int]]])
 
+CameraData = NewType('CameraData', tuple[int, int, float, float, float, float])
+ImageData = NewType('ImageData', tuple[str, int, tuple[float, float, float], tuple[float, float, float]])
