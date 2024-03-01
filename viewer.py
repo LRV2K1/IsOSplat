@@ -29,6 +29,7 @@ class RendererThread:
         self.anglh = 0.0
         self.anglv = 0.0
         self.dis = 8.0
+        self.size = 1.0
 
         self.background: Tensor = torch.ones(3, device=device)
 
@@ -45,11 +46,14 @@ class RendererThread:
         self.dis = max(0.1, self.dis)
         self._update_camera()
 
+    def set_size(self, size: float):
+        self.size = size
+
     def _update_camera(self):
         self.camera.orbit(0.0, 0.0, 0.0, self.dis, self.anglh, self.anglv)
 
     def render(self, width: int, height: int) -> Image:
-        out_img, _, _ = self.renderer.render(self.camera, self.background)
+        out_img, _, _ = self.renderer.render(self.camera, self.size, self.background)
         img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
         return img.resize((width, height))
 
@@ -69,11 +73,21 @@ class Viewer:
         self.panel = Label(self.root)
         self.panel.place(x=0, y=0)
 
+        self.slider = Scale(self.root, from_=0, to=1, orient=HORIZONTAL)
+        self.slider.bind("<Enter>", self._enter_no_drag)
+        self.slider.bind("<Leave>", self._leave_no_drag)
+        self.slider.set(1.0)
+        self.slider.place(x=10, y=10)
+
+        self.label = Label(self.root, text=f"{self.slider.get():.2f}")
+        self.label.place(x=120, y=15)
+
         self.prev_image: ImageTk.PhotoImage
 
         self.renderer = RendererThread(load_path)
 
         self.dragging = False
+        self.drag_space = True
         self.last_x = 0.0
         self.last_y = 0.0
 
@@ -83,6 +97,10 @@ class Viewer:
         self.root.mainloop()
 
     def render_loop(self):
+        size = self.slider.get()
+        self.label.configure(text=f"{size:.2f}")
+
+        self.renderer.set_size(size)
         img = self.renderer.render(800, 800)
         final_img = ImageTk.PhotoImage(img)
         self.panel.configure(image=final_img)
@@ -94,7 +112,7 @@ class Viewer:
         self.root.destroy()
 
     def _drag(self, event):
-        if not self.dragging:
+        if not self.dragging or not self.drag_space:
             return
 
         dx = float(self.last_x - event.x)/25.0
@@ -111,9 +129,19 @@ class Viewer:
 
     def _released(self, event):
         self.dragging = False
+        self.drag_space = True
 
     def _scroll(self, event):
         self.renderer.add_distance(-float(event.delta)/240.0)
+
+    def _enter_no_drag(self, event):
+        self.drag_space = False
+
+    def _leave_no_drag(self, event):
+        self.last_x = event.x
+        self.last_y = event.y
+        if not self.dragging:
+            self.drag_space = True
 
 
 def main(

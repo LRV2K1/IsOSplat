@@ -180,7 +180,7 @@ class GaussianSplatting:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
         return spherical_harmonics(degrees_to_use, view_dirs, sh_coeffs)
 
-    def rasterize(self, camera: Camera, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
+    def rasterize(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
         view_mat, project_mat = camera.get_view_and_project_matrix()
         focalx, focaly = camera.get_focal()
         width, height = camera.get_size()
@@ -193,7 +193,7 @@ class GaussianSplatting:
         xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
             self.means,
             self.scales,
-            1,
+            size,
             self.quats,
             view_mat,
             project_mat,
@@ -229,9 +229,9 @@ class GaussianSplatting:
         t1 = time.time() - start
         return out_img, out_alpha, t0, t1
 
-    def render(self, camera: Camera, color: Optional[Tensor] = None) -> tuple[Tensor, float, float]:
+    def render(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, float, float]:
         with torch.no_grad():
-            out_img, _, t0, t1 = self.rasterize(camera, color)
+            out_img, _, t0, t1 = self.rasterize(camera, size, color)
             return out_img, t0, t1
 
     def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
