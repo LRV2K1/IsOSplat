@@ -20,6 +20,7 @@ class RendererThread:
 
         self.renderer = GaussianSplatting(device)
         self.renderer.init_gaussians(0, load_path)
+        # self.renderer.init_axis()
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
         self.camera = Camera(400, 400, 480, 480, 200, 200, device)
@@ -29,11 +30,22 @@ class RendererThread:
         self.dis = 8.0
         self.size = 1.0
 
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
+
         self.background: Tensor = torch.ones(3, device=device)
         self.other_background: Tensor = torch.zeros(3, device=device)
 
     def toggle_background(self):
         self.background, self.other_background = self.other_background, self.background
+
+    def translate(self, x: float, y: float, z: float):
+        self.x += x
+        self.y += y
+        self.z += z
+        self.camera.translate(x, y, z)
+        self._update_camera()
 
     def add_angle(self, anglh: float, anglv: float):
         self.anglh += anglh
@@ -52,7 +64,7 @@ class RendererThread:
         self.size = size
 
     def _update_camera(self):
-        self.camera.orbit(0.0, 0.0, 0.0, self.dis, self.anglh, self.anglv)
+        self.camera.orbit(self.x, self.y, self.z, self.dis, self.anglh, self.anglv)
 
     def render(self, width: int, height: int) -> Image:
         out_img, _, _ = self.renderer.render(self.camera, self.size, self.background)
@@ -71,6 +83,7 @@ class Viewer:
         self.root.bind("<Button-1>", self._clicked)
         self.root.bind("<ButtonRelease-1>", self._released)
         self.root.bind("<MouseWheel>", self._scroll)
+        self.root.bind("<Key>", self.key_handler)
 
         self.panel = Label(self.root)
         self.panel.place(x=0, y=0)
@@ -96,8 +109,23 @@ class Viewer:
         self.last_x = 0.0
         self.last_y = 0.0
 
+    def key_handler(self, event):
+        match event.char:
+            case 'w':
+                self.renderer.translate(0, 0, -1)
+            case 's':
+                self.renderer.translate(0, 0, 1)
+            case 'a':
+                self.renderer.translate(-1, 0, 0)
+            case 'd':
+                self.renderer.translate(1, 0, 0)
+
+        if event.keycode == 32:
+            self.renderer.translate(0, 1, 0)
+        if event.keycode == 16:
+            self.renderer.translate(0, -1, 0)
+
     def run(self):
-        # self.renderer.start()
         self.render_loop()
         self.root.mainloop()
 

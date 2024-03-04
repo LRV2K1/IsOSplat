@@ -5,21 +5,24 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from typing import NewType
 
 from .camera import Camera
 from .optimizer import Optimizer
-from .depth.sfm_types import PointCloud
 import isosplat.loss_functions as loss_functions
 import isosplat.utils as utils
 
 import torch
-from torch import Tensor, optim
+from torch import Tensor
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
 from gsplat import spherical_harmonics
 from PIL import Image
 
 BLOCK_WIDTH = 16
+
+
+PointCloud = NewType('PointCloud', list[tuple[tuple[float, float, float], tuple[int, int, int]]])
 
 
 class GaussianSplatting:
@@ -37,6 +40,51 @@ class GaussianSplatting:
         self.sh_degree: int = 0
 
         self.optimizer: Optimizer
+
+        self.splits = 0
+        self.clones = 0
+        self.culls = 0
+
+    def init_axis(self):
+        self.num_points = 7
+        self.means = torch.tensor(
+            [[0.0, 0.0, 0.0],
+             [1.0, 0.0, 0.0],
+             [-1.0, 0.0, 0.0],
+             [0.0, 0.0, 1.0],
+             [0.0, 0.0, -1.0],
+             [0.0, 1.0, 0.0],
+             [0.0, -1.0, 0.0]]
+            , device=self.device
+        )
+        self.scales = torch.ones(self.num_points, 3, device=self.device) * 0.1
+        self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
+        self.sh_coeffs = torch.tensor(
+            [
+                [[-10.0, -10.0, -10.0]],
+                [[10.0, -10.0, -10.0]],
+                [[-10.0, 10.0, -10.0]],
+                [[-10.0, -10.0, 10.0]],
+                [[-10.0, 10.0, -10.0]],
+                [[10.0, 10.0, -10.0]],
+                [[-10.0, 10.0, -10.0]]
+            ],
+            device=self.device
+        )
+        u = torch.rand(self.num_points, 1, device=self.device)
+        v = torch.rand(self.num_points, 1, device=self.device)
+        w = torch.rand(self.num_points, 1, device=self.device)
+        self.quats = torch.cat(
+            [
+                torch.sqrt(1.0 - u) * torch.sin(2.0 * math.pi * v),
+                torch.sqrt(1.0 - u) * torch.cos(2.0 * math.pi * v),
+                torch.sqrt(u) * torch.sin(2.0 * math.pi * w),
+                torch.sqrt(u) * torch.cos(2.0 * math.pi * w)
+            ],
+            -1
+        )
+
+        self.sh_degree = 0
 
     def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None):
         if load_path:
@@ -111,7 +159,7 @@ class GaussianSplatting:
         return self.sh_degree < 4 and itr % 1000 == 0 and itr > 0
 
     def train(self, data: list[tuple[Tensor, Tensor, Camera, str]], iterations: int = 200):
-        self.frames = []
+        # self.frames = []
         times = [0] * 3
 
         n_data = len(data)
@@ -139,11 +187,12 @@ class GaussianSplatting:
 
                 print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
 
-                if data_itr == 0 and itr % 5 == 0:
-                    self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
+                # if data_itr == 0 and itr % 5 == 0:
+                #     self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                 data_itr += 1
 
         print(f"Number gaussians: {self.num_points}")
+        print(f"Culls: {self.culls}, Splits: {self.splits}, Clones: {self.clones}")
         print(
             f"Total(s):\nProject: {times[0]:.3f}, Rasterize: {times[1]:.3f}, Backward: {times[2]:.3f}"
         )
@@ -152,9 +201,6 @@ class GaussianSplatting:
         )
 
     def save(self, save_path: Path):
-        if len(self.frames) <= 0:
-            return
-
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
@@ -163,21 +209,24 @@ class GaussianSplatting:
         torch.save(self.scales, f"{save_path}/scales.pt")  # scales
         torch.save(self.opacities, f"{save_path}/opacities.pt")  # opacities
         torch.save(self.quats, f"{save_path}/quats.pt")  # quats
+        #
+        # if len(self.frames) <= 0:
+        #     return
 
-        self.frames = [Image.fromarray(frame) for frame in self.frames]
-        self.frames[0].save(
-            f"{save_path}/training.gif",
-            save_all=True,
-            append_images=self.frames[1:],
-            optimize=False,
-            duration=5,
-            loop=0,
-        )
-        self.frames[-1].save(
-            f"{save_path}/training.png",
-            save_all=True,
-            optimize=False,
-        )
+        # self.frames = [Image.fromarray(frame) for frame in self.frames]
+        # self.frames[0].save(
+        #     f"{save_path}/training.gif",
+        #     save_all=True,
+        #     append_images=self.frames[1:],
+        #     optimize=False,
+        #     duration=5,
+        #     loop=0,
+        # )
+        # self.frames[-1].save(
+        #     f"{save_path}/training.png",
+        #     save_all=True,
+        #     optimize=False,
+        # )
 
     def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
@@ -244,7 +293,9 @@ class GaussianSplatting:
 
         opacity_threshold = utils.inverse_sigmoid(opacity_threshold)
         mask = (self.opacities <= opacity_threshold).squeeze()
+        cur_points = self.num_points
         self._update_tensors(self.optimizer.prune_optimizer(~mask))
+        self.culls += cur_points - self.num_points
 
     def _split(self, grad_threshold: float, size_threshold: float, extend: float):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
@@ -277,6 +328,7 @@ class GaussianSplatting:
         }
         self.optimizer.prune_optimizer(~mask)
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
+        self.splits += new_opacities.shape[0]/2
 
     def _clone(self, grad_threshold: float, size_threshold: float, extend: float):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
@@ -298,6 +350,7 @@ class GaussianSplatting:
             'quats': new_quats
         }
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
+        self.clones += new_opacities.shape[0]
 
     def _reset_opacity(self):
         new_opacities = torch.min(self.opacities, utils.inverse_sigmoid_tensor(torch.ones_like(self.opacities) * 0.005))
@@ -322,75 +375,3 @@ class GaussianSplatting:
 
                     image = Image.fromarray((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                     image.save(f"{save_path}/{name}_render.png")
-
-    def orbit_render(self, camera: Camera, save_path: Path):
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-
-        frames = []
-        anglh = 0.0
-        anglv = 0.0
-        dis = 0.0
-
-        for itr in range(200):
-            # set camera
-            if itr < 100:
-                anglh = (math.pi / 50) * itr
-            else:
-                anglh = (math.pi / 50) * (99 - (itr % 100))
-
-            # if (itr < 50):
-            #     anglv = (math.pi / 200) * itr
-            # elif (itr < 150):
-            #     anglv = (math.pi / 200) * (49 - (itr - 50))
-            # else:
-            #     anglv = (math.pi / 200) * (-50 + (itr % 50))
-
-            if (itr % 100) < 50:
-                dis += 1
-            else:
-                dis -= 1
-
-            camera.orbit(0.0, 0.0, 0.0, 8.0 + (dis / 25.0), anglh, anglv)
-
-            out_img, _, _ = self.render(camera)
-
-            frames.append((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
-        frames = [Image.fromarray(frame) for frame in frames]
-        frames[0].save(
-            f"{save_path}/render.gif",
-            save_all=True,
-            append_images=frames[1:],
-            optimize=False,
-            duration=5,
-            loop=0,
-        )
-
-    def zoom_render(self, camera: Camera, save_path: Path):
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-
-        frames = []
-        dis = 0
-
-        for itr in range(200):
-            # set camera
-            if itr < 100:
-                dis += 1
-            else:
-                dis -= 1
-
-            camera.distance(0.0, 0.0, 0.0, 7.0 + dis)
-
-            out_img, _, _ = self.render(camera)
-
-            frames.append((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
-        frames = [Image.fromarray(frame) for frame in frames]
-        frames[0].save(
-            f"{save_path}/render.gif",
-            save_all=True,
-            append_images=frames[1:],
-            optimize=False,
-            duration=5,
-            loop=0,
-        )

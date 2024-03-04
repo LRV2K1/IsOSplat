@@ -26,42 +26,27 @@ class Camera:
         fov_height = (2 * self.focaly) / height
         far = 10
         near = 1
-        a = (far + near) / (far - near)
-        b = -(far * near) / (far - near)
+        a = -(far + near) / (far - near)
+        b = -(2 * far * near) / (far - near)
 
         self.perspective_project_mat = torch.tensor(
             [
                 [fov_width, 0.0, 0.0, 0.0],
                 [0.0, fov_height, 0.0, 0.0],
                 [0.0, 0.0, a, b],
-                [0.0, 0.0, 1.0, 0.0]
+                [0.0, 0.0, -1.0, 0.0]
             ],
             device=self.device
         )
 
-        self.translation_mat = torch.tensor(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, -8.0],
-                [0.0, 0.0, 0.0, 1.0]
-            ],
-            device=self.device
-        )
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 8.0
 
-        self.rotation_mat = torch.tensor(
-            [
-                [-1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, -1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0]
-            ],
-            device=self.device
-        )
+        self.look_at(0.0, 0.0, 0.0)
 
         self.viewMatrixUpdate = True
 
-        self.translation_mat.requires_grad = False
         self.rotation_mat.requires_grad = False
         self.perspective_project_mat.requires_grad = False
 
@@ -76,22 +61,31 @@ class Camera:
 
     def _update_view_and_projection_matrix(self):
         if self.viewMatrixUpdate:
-            self.view_matrix = torch.matmul(self.rotation_mat, self.translation_mat)
-            self.view_matrix.requires_grad = False
+            translation_mat = torch.tensor(
+                [
+                    [1.0, 0.0, 0.0, -self.x],
+                    [0.0, 1.0, 0.0, -self.y],
+                    [0.0, 0.0, 1.0, -self.z],
+                    [0.0, 0.0, 0.0, 1.0]
+                ],
+                device=self.device
+            )
+            self.model_view_mat = torch.matmul(self.rotation_mat, translation_mat)
+            self.model_view_mat.requires_grad = False
 
-            self.project_matrix = torch.matmul(self.perspective_project_mat, self.view_matrix)
+            self.project_matrix = torch.matmul(self.perspective_project_mat, self.model_view_mat)
             self.project_matrix.requires_grad = False
 
             self.viewMatrixUpdate = False
 
     def get_view_and_project_matrix(self) -> tuple[Tensor, Tensor]:
         self._update_view_and_projection_matrix()
-        return self.view_matrix, self.project_matrix
+        return self.model_view_mat, self.project_matrix
 
     def get_view_direction(self) -> Tensor:
         direction = torch.tensor(
-            [self.rotation_mat[2, 0],
-             self.rotation_mat[2, 1],
+            [self.rotation_mat[0, 2],
+             self.rotation_mat[1, 2],
              self.rotation_mat[2, 2]],
             device=self.device
         )
@@ -100,9 +94,9 @@ class Camera:
     def get_camera_position(self) -> Tensor:
         pos = torch.tensor(
             [
-                self.translation_mat[0, 3],
-                self.translation_mat[1, 3],
-                self.translation_mat[2, 3]
+                self.x,
+                self.y,
+                self.z
             ],
             device=self.device
         )
@@ -118,52 +112,41 @@ class Camera:
         return self.width, self.height
 
     def set_position(self, posx: float, posy: float, posz: float):
-        self.translation_mat = torch.tensor(
-            [
-                [1.0, 0.0, 0.0, posx],
-                [0.0, 1.0, 0.0, posy],
-                [0.0, 0.0, 1.0, posz],
-                [0.0, 0.0, 0.0, 1.0]
-            ],
-            device=self.device
-        )
+        self.x = posx
+        self.y = posy
+        self.z = posz
         self.viewMatrixUpdate = True
 
-    def set_view_direction(self, dirx, diry, dirz):
-        self.look_at(-dirx, -diry, -dirz)
+    def translate(self, posx: float, posy: float, posz: float):
+        self.x += posx
+        self.y += posy
+        self.z += posz
+        self.viewMatrixUpdate = True
+
+    def set_view_direction(self, dirx: float, diry: float, dirz: float):
+        self.look_at(self.x+dirx, self.y+diry, self.z+dirz)
 
     def distance(self, posx: float, posy: float, posz: float, dis: float):
-        camx = self.translation_mat[0, 3]
-        camy = self.translation_mat[1, 3]
-        camz = self.translation_mat[2, 3]
-        self._distance(camx, camy, camz, posx, posy, posz, dis)
+        self._distance(self.x, self.y, self.z, posx, posy, posz, dis)
 
     def _distance(self, camx: float, camy: float, camz: float, posx: float, posy: float, posz: float, dis: float):
         dir = torch.tensor([camx - posx, camy - posy, camz - posz], device=self.device)
         dir = dir / torch.linalg.vector_norm(dir)
 
-        self.translation_mat = torch.tensor(
-            [
-                [1.0, 0.0, 0.0, dir[0] * dis],
-                [0.0, 1.0, 0.0, dir[1] * dis],
-                [0.0, 0.0, 1.0, dir[2] * dis],
-                [0.0, 0.0, 0.0, 1.0]
-            ],
-            device=self.device
-        )
+        self.x = posx + dir[0] * dis
+        self.y = posy + dir[1] * dis
+        self.z = posz + dir[2] * dis
         self.viewMatrixUpdate = True
 
     def look_at(self, posx: float, posy: float, posz: float):
-        camx = self.translation_mat[0, 3]
-        camy = self.translation_mat[1, 3]
-        camz = self.translation_mat[2, 3]
-
-        # direction, right, and up vectors of the camera
-        d = torch.tensor([camx - posx, camy - posy, camz - posz], device=self.device)
+        # direction, left, and up vectors of the camera
+        d = torch.tensor([posx - self.x, posy - self.y, posz - self.z], device=self.device)
         d = d / torch.linalg.vector_norm(d)
-        l = torch.tensor([camz - posz, 0.0, -camx - posx], device=self.device)
+        ut = torch.tensor([0.0, 1.0, 0.0], device=self.device)
+        l = torch.linalg.cross(ut, d)
         l = l / torch.linalg.vector_norm(l)
         u = torch.linalg.cross(d, l)
+        u = u / torch.linalg.vector_norm(u)
 
         self.rotation_mat = torch.tensor(
             [
@@ -177,15 +160,13 @@ class Camera:
         self.viewMatrixUpdate = True
 
     def look_at_top(self, posx: float, posy: float, posz: float, topx: float, topy: float, topz: float):
-        camx = self.translation_mat[0, 3]
-        camy = self.translation_mat[1, 3]
-        camz = self.translation_mat[2, 3]
-
-        d = torch.tensor([camx - posx, camy - posy, camz - posz], device=self.device)
+        d = torch.tensor([posx - self.x, posy - self.y, posz - self.z], device=self.device)
         d = d / torch.linalg.vector_norm(d)
-        u = torch.tensor([topx, topy, topz], device=self.device)
+        ut = torch.tensor([topx, topy, topz], device=self.device)
+        l = torch.linalg.cross(ut, d)
+        l = l / torch.linalg.vector_norm(l)
+        u = torch.linalg.cross(d, l)
         u = u / torch.linalg.vector_norm(u)
-        l = torch.linalg.cross(d, u) * -1.0
 
         self.rotation_mat = torch.tensor(
             [
@@ -201,12 +182,12 @@ class Camera:
     def orbit(self, posx: float, posy: float, posz: float, dis: float, anglh: float, anglv: float):
         anglh = anglh - math.pi / 2
         tempx = math.cos(anglh)
-        tempz = math.sin(anglh)
+        tempz = -math.sin(anglh)
 
-        y = math.sin(anglv)
+        y = math.sin(anglv) + posy
         xz = math.cos(anglv)
-        x = tempx * xz
-        z = tempz * xz
+        x = tempx * xz + posx
+        z = tempz * xz + posz
 
         self._distance(x, y, z, posx, posy, posz, dis)
         self.look_at(posx, posy, posz)

@@ -1,8 +1,5 @@
 import shutil
-import urllib.request
-import zipfile
 from pathlib import Path
-# from typing import Optional, NewType
 import os
 
 import tyro
@@ -13,11 +10,9 @@ import enlighten
 import pycolmap
 from pycolmap import logging
 from PIL import Image
+from .sfm_types import *
 
-from isosplat.depth.sfm_types import *
-
-
-class SFM():
+class SFM:
     def __init__(self, img_path: Path):
         self.img_path: Path = img_path
         self.sfm_path: Path = img_path / "sfm"
@@ -59,7 +54,7 @@ class SFM():
         for image_id, image in self.reconstruction.images.items():
             img = (image.name, image.camera_id, image.projection_center(), image.viewing_direction())
             images.append(img)
-            print(image_id, image, image.cam_from_world)
+            print(image_id, image, f"p={image.projection_center()}", f"d={image.viewing_direction()}")
         return images
 
     def sfm(self, clean: bool = False):

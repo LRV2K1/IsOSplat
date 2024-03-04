@@ -1,19 +1,21 @@
-import pycolmap     # needed to avoid import error
+import pycolmap
 
-import math
-import os
 from pathlib import Path
+import os
 from typing import Optional
 from enum import Enum
+from PIL import Image
 
 import tyro
+import numpy as np
 
 import torch
 from torch import Tensor
-from PIL import Image
 
 from isosplat.camera import Camera
 from isosplat.gaussian_splatting import GaussianSplatting
+from depth.sfm import SFM
+from depth.sfm_types import *
 
 
 class Initialize(Enum):
@@ -47,13 +49,29 @@ def create_camera_from_cam_file(width: int, height: int, cam_path: Path, device:
         principal = lines[1].split(',')
         pos = lines[2].split(',')
         dir = lines[3].split(',')
-        camera = Camera(width, height, float(focal[0]), float(focal[1]), float(principal[0]), float(principal[1]), device)
+        camera = Camera(width, height,
+                        float(focal[0]), float(focal[1]),
+                        float(principal[0]), float(principal[1]),
+                        device)
         camera.set_position(float(pos[0]), float(pos[1]), float(pos[2]))
         if len(lines) > 4:
             top = lines[4].split(',')
             camera.look_at_top(float(dir[0]), float(dir[1]), float(dir[2]), float(top[0]), float(top[1]), float(top[2]))
         else:
             camera.look_at(float(dir[0]), float(dir[1]), float(dir[2]))
+    return camera
+
+
+def create_camera_from_sfm_data(cam_data: CameraData,
+                                pos: tuple[float, float, float],
+                                dir: tuple[float, float, float],
+                                device: torch.device) -> Camera:
+    width, height, focalx, focaly, cx, cy = cam_data
+    x, y, z = pos
+    dx, dy, dz = dir
+    camera = Camera(width, height, focalx, focaly, cx, cy, device)
+    camera.set_position(x, y, z)
+    camera.set_view_direction(dx, dy, dz)
     return camera
 
 
@@ -67,21 +85,32 @@ def main(
         lr: float = 0.01,
         splats: int = 100000,
         initialize: Initialize = Initialize.Random,
-        cam_model: CamModel = CamModel.CamFile
+        cam_model: CamModel = CamModel.CamFile,
+        clean: bool = False
 ) -> None:
     device = torch.device("cuda:0")
+    data = []
 
     if img_path:
-        data = []
-
-        for file in os.listdir(img_path):
-            filename = os.fsdecode(file)
-            if filename.endswith(".cam"):
-                name = filename.split('.')[0]
-                gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
-                width, height = gt_image.shape[0], gt_image.shape[1]
-                camera = create_camera_from_cam_file(width, height, img_path / f"{name}.cam", device)
-                data.append((gt_image, gt_alpha, camera, name))
+        match cam_model:
+            case CamModel.CamFile:
+                for file in os.listdir(img_path):
+                    filename = os.fsdecode(file)
+                    if filename.endswith(".cam"):
+                        name = filename.split('.')[0]
+                        gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
+                        width, height = gt_image.shape[0], gt_image.shape[1]
+                        camera = create_camera_from_cam_file(width, height, img_path / f"{name}.cam", device)
+                        data.append((gt_image, gt_alpha, camera, name))
+            case CamModel.SFM:
+                sfm = SFM(img_path)
+                sfm.sfm(clean)
+                # camera_data = sfm.get_camera_data()
+                # image_data = sfm.get_image_data()
+                # for name, cam_id, pos, dir in image_data:
+                #     camera = create_camera_from_sfm_data(camera_data[cam_id], pos, dir, device)
+                #     gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
+                #     data.append((gt_image, gt_alpha, camera, name))
     else:
         gt_image = torch.ones((height, width, 3)) * 1.0
         # make top left and bottom right red, blue
