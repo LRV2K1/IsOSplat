@@ -10,7 +10,7 @@ import enlighten
 import pycolmap
 from pycolmap import logging
 from PIL import Image
-from .sfm_types import *
+from depth.sfm_types import *
 
 class SFM:
     def __init__(self, img_path: Path):
@@ -42,7 +42,7 @@ class SFM:
                    camera.focal_length_x, camera.focal_length_y,
                    camera.principal_point_x, camera.principal_point_y)
             cameras[camera_id] = cam
-            print(camera_id, camera)
+            # print(camera_id, camera)
         return cameras
 
     def get_image_data(self) -> list[ImageData]:
@@ -54,7 +54,7 @@ class SFM:
         for image_id, image in self.reconstruction.images.items():
             img = (image.name, image.camera_id, image.projection_center(), image.viewing_direction())
             images.append(img)
-            print(image_id, image, f"p={image.projection_center()}", f"d={image.viewing_direction()}")
+            # print(image_id, image, f"p={image.projection_center()}", f"d={image.viewing_direction()}")
         return images
 
     def sfm(self, clean: bool = False):
@@ -64,6 +64,8 @@ class SFM:
             self.reconstruction = pycolmap.Reconstruction(self.sfm_path / "0")
         except:
             raise Exception("SFM could not reconstruct the data")
+
+        self.reconstruction.write_text(self.sfm_path)
 
     def _sfm(self, clean: bool = False):
         if not os.path.exists(self.sfm_path):
