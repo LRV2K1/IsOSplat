@@ -19,6 +19,8 @@ from .rasterize import _RasterizeGaussians
 from gsplat import spherical_harmonics
 from PIL import Image
 
+import random
+
 BLOCK_WIDTH = 16
 
 
@@ -100,7 +102,7 @@ class GaussianSplatting:
             print("Creating gaussians from SFM point cloud")
             # SFM point cloud is in right-handed coordinate system with y down,
             # use right-handed coordinate system with y up
-            mean_list = [[float(mean[0]), -float(mean[1]), float(-mean[2])] for mean, _ in point_cloud]
+            mean_list = [[float(mean[0]), float(mean[1]), float(mean[2])] for mean, _ in point_cloud]
             color_list = [[utils.inverse_sigmoid(float(color[0])/256),
                            utils.inverse_sigmoid(float(color[1])/256),
                            utils.inverse_sigmoid(float(color[2])/256)] for _, color in point_cloud]
@@ -201,6 +203,7 @@ class GaussianSplatting:
             if self._add_sh_band(itr):
                 self.sh_degree += 1
 
+            random.shuffle(data)
             for gt_view, gt_alpha, camera, _ in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
