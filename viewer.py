@@ -23,7 +23,8 @@ class RendererThread:
         # self.renderer.init_axis()
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
-        self.camera = Camera(400, 400, 480, 480, 200, 200, device)
+        self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
+        # self.camera = Camera(400, 400, 480, 480, 200, 200, device)
 
         self.anglh = 0.0
         self.anglv = 0.0
@@ -74,9 +75,12 @@ class RendererThread:
 
 class Viewer:
     def __init__(self, load_path: Path):
+        self.width = 1200
+        # self.width = 800
+        self.height = 800
         self.root = Tk()
         self.root.title("IsOSplat")
-        self.root.geometry("800x800")
+        self.root.geometry(f"{self.width}x{self.height}")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.root.bind("<B1-Motion>", self._drag)
@@ -134,7 +138,7 @@ class Viewer:
         self.label.configure(text=f"{size:.2f}")
 
         self.renderer.set_size(size)
-        img = self.renderer.render(800, 800)
+        img = self.renderer.render(self.width, self.height)
         final_img = ImageTk.PhotoImage(img)
         self.panel.configure(image=final_img)
         self.prev_image = final_img

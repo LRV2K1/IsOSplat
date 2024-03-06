@@ -19,12 +19,11 @@ def create_camera_from_cam_file(width: int, height: int, cam_path: Path, device:
                         float(principal[0]), float(principal[1]),
                         device)
         camera.set_position(float(pos[0]), float(pos[1]), float(pos[2]))
-        # camera data is in left handed coordinate system, use right handed coordinate system
         if len(lines) > 4:
             top = lines[4].split(',')
-            camera.look_at_top(float(dir[0]), float(dir[1]), -float(dir[2]), float(top[0]), float(top[1]), float(top[2]))
+            camera.look_at_top(float(dir[0]), float(dir[1]), float(dir[2]), float(top[0]), float(top[1]), float(top[2]))
         else:
-            camera.look_at(float(dir[0]), float(dir[1]), -float(dir[2]))
+            camera.look_at(float(dir[0]), float(dir[1]), float(dir[2]))
     return camera
 
 
@@ -35,9 +34,11 @@ def create_camera_from_sfm_data(cam_data: tuple[int, int, float, float, float, f
     width, height, focalx, focaly, cx, cy = cam_data
     x, y, z = pos
     dx, dy, dz = dir
+    # camera data is in right-handed coordinate system with y down,
+    # use right-handed coordinate system with y up
     camera = Camera(width, height, float(focalx), float(focaly), float(cx), float(cy), device)
-    camera.set_position(float(x), float(y), float(z))
-    camera.set_view_direction(float(dx), float(dy), float(dz))
+    camera.set_position(float(x), -float(y), -float(z))
+    camera.set_view_direction(float(dx), -float(dy), -float(dz))
     return camera
 
 

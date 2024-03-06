@@ -98,8 +98,38 @@ class GaussianSplatting:
             self.num_points = self.opacities.shape[0]
         elif point_cloud:
             print("Creating gaussians from SFM point cloud")
-            print("sfm")
-            # TODO sfm
+            # SFM point cloud is in right-handed coordinate system with y down,
+            # use right-handed coordinate system with y up
+            mean_list = [[float(mean[0]), -float(mean[1]), float(-mean[2])] for mean, _ in point_cloud]
+            color_list = [[utils.inverse_sigmoid(float(color[0])/256),
+                           utils.inverse_sigmoid(float(color[1])/256),
+                           utils.inverse_sigmoid(float(color[2])/256)] for _, color in point_cloud]
+
+            self.num_points = len(mean_list)
+            self.means = torch.tensor(mean_list, device=self.device)
+
+            #TODO scales
+            self.scales = torch.ones(self.num_points, 3, device=self.device) * 0.01
+            self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
+
+            colors = torch.tensor(color_list, device=self.device)
+            self.sh_coeffs = torch.ones(self.num_points, 25, 3, device=self.device)
+            self.sh_coeffs[:,0,:] = colors
+
+            u = torch.rand(self.num_points, 1, device=self.device)
+            v = torch.rand(self.num_points, 1, device=self.device)
+            w = torch.rand(self.num_points, 1, device=self.device)
+            self.quats = torch.cat(
+                [
+                    torch.sqrt(1.0 - u) * torch.sin(2.0 * math.pi * v),
+                    torch.sqrt(1.0 - u) * torch.cos(2.0 * math.pi * v),
+                    torch.sqrt(u) * torch.sin(2.0 * math.pi * w),
+                    torch.sqrt(u) * torch.cos(2.0 * math.pi * w)
+                ],
+                -1
+            )
+
+            self.sh_degree = 0
         else:
             print("Randomly initialize gaussians")
             self.num_points = splats
@@ -121,8 +151,8 @@ class GaussianSplatting:
                 ],
                 -1
             )
-
             self.sh_degree = 0
+            print(f"Initialized {self.num_points} gaussians")
 
     def init_optimizer(self, lr: float):
         optimize_tensors = {
