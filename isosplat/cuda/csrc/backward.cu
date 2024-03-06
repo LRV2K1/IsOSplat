@@ -152,10 +152,12 @@ __global__ void rasterize_backward_kernel(
     const int* __restrict__ final_index,
     const float3* __restrict__ v_output,
     const float* __restrict__ v_output_alpha,
+    const float* __restrict__ v_output_depth, //new, todo
     float2* __restrict__ v_xy,
     float3* __restrict__ v_conic,
     float3* __restrict__ v_rgb,
-    float* __restrict__ v_opacity
+    float* __restrict__ v_opacity,
+    float* __restrict__ v_depth     //new, todo
 ) {
     auto block = cg::this_thread_block();
     int32_t tile_id =
@@ -196,6 +198,7 @@ __global__ void rasterize_backward_kernel(
     // df/d_out for this pixel
     const float3 v_out = v_output[pix_id];
     const float v_out_alpha = v_output_alpha[pix_id];
+    const float v_out_depth = v_output_depth[pix_id];   //new, depth
 
     // collect and process batches of gaussians
     // each thread loads one gaussian at a time before rasterizing
@@ -258,6 +261,7 @@ __global__ void rasterize_backward_kernel(
             float3 v_conic_local = {0.f, 0.f, 0.f};
             float2 v_xy_local = {0.f, 0.f};
             float v_opacity_local = 0.f;
+            float v_depth_local = 0.f; //new, todo
             //initialize everything to 0, only set if the lane is valid
             if(valid){
                 // compute the current T for this gaussian
@@ -267,6 +271,7 @@ __global__ void rasterize_backward_kernel(
                 const float fac = alpha * T;
                 float v_alpha = 0.f;
                 v_rgb_local = {fac * v_out.x, fac * v_out.y, fac * v_out.z};
+                v_depth_local = fac * v_out_depth;
 
                 const float3 rgb = rgbs_batch[t];
                 // contribution from this pixel
@@ -296,6 +301,7 @@ __global__ void rasterize_backward_kernel(
             warpSum3(v_conic_local, warp);
             warpSum2(v_xy_local, warp);
             warpSum(v_opacity_local, warp);
+            warpSum(v_depth_local, warp); //new, todo
             if (warp.thread_rank() == 0) {
                 int32_t g = id_batch[t];
                 float* v_rgb_ptr = (float*)(v_rgb);

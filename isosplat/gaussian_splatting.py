@@ -193,7 +193,7 @@ class GaussianSplatting:
         return self.sh_degree < 4 and itr % 1000 == 0 and itr > 0
 
     def train(self, data: list[tuple[Tensor, Tensor, Camera, str]], iterations: int = 200):
-        # self.frames = []
+        self.frames = []
         times = [0] * 3
 
         n_data = len(data)
@@ -221,8 +221,8 @@ class GaussianSplatting:
 
                 print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
 
-                # if data_itr == 0 and itr % 5 == 0:
-                #     self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
+                if data_itr == 0 and itr % 5 == 0:
+                    self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):
@@ -248,24 +248,24 @@ class GaussianSplatting:
         torch.save(self.quats, f"{save_path}/quats.pt")  # quats
         torch.save(self.acc_grad, f"{save_path}/acc_grad.pt") # acc grads
         torch.save(self.denom, f"{save_path}/denom.pt") # acc grads
-        #
-        # if len(self.frames) <= 0:
-        #     return
+        
+        if len(self.frames) <= 0:
+            return
 
-        # self.frames = [Image.fromarray(frame) for frame in self.frames]
-        # self.frames[0].save(
-        #     f"{save_path}/training.gif",
-        #     save_all=True,
-        #     append_images=self.frames[1:],
-        #     optimize=False,
-        #     duration=5,
-        #     loop=0,
-        # )
-        # self.frames[-1].save(
-        #     f"{save_path}/training.png",
-        #     save_all=True,
-        #     optimize=False,
-        # )
+        self.frames = [Image.fromarray(frame) for frame in self.frames]
+        self.frames[0].save(
+            f"{save_path}/training.gif",
+            save_all=True,
+            append_images=self.frames[1:],
+            optimize=False,
+            duration=5,
+            loop=0,
+        )
+        self.frames[-1].save(
+            f"{save_path}/training.png",
+            save_all=True,
+            optimize=False,
+        )
 
     def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
