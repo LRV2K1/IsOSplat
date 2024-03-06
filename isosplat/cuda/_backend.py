@@ -35,7 +35,9 @@ def cuda_toolkit_version():
 
 
 name = "isosplat_cuda"
-build_dir = _get_build_directory(name, verbose=False)
+
+# build_dir = _get_build_directory(name, verbose=False)
+build_dir = f"{PATH}/build"
 extra_include_paths = [os.path.join(PATH, "csrc/third_party/glm")]
 extra_cflags = ["-O3"]
 extra_cuda_cflags = ["-O3"]
@@ -77,11 +79,15 @@ except ImportError:
                 extra_cflags=extra_cflags,
                 extra_cuda_cflags=extra_cuda_cflags,
                 extra_include_paths=extra_include_paths,
+                build_directory=build_dir
             )
         else:
             # Build from scratch. Remove the build directory just to be safe: pytorch jit might stuck
             # if the build directory exists with a lock file in it.
-            shutil.rmtree(build_dir)
+            if os.path.exists(build_dir):
+                shutil.rmtree(build_dir)
+            os.makedirs(build_dir)
+            print(f"isosplat build directory: {build_dir}")
             with Console().status(
                 "[bold yellow]isosplat: Setting up CUDA (This may take a few minutes the first time)",
                 spinner="bouncingBall",
@@ -92,6 +98,7 @@ except ImportError:
                     extra_cflags=extra_cflags,
                     extra_cuda_cflags=extra_cuda_cflags,
                     extra_include_paths=extra_include_paths,
+                    build_directory=build_dir
                 )
     else:
         Console().print(
