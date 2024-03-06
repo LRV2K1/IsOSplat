@@ -39,6 +39,8 @@ class GaussianSplatting:
         self.opacities: Tensor
         self.sh_coeffs: Tensor
         self.quats: Tensor
+        self.acc_grad: Tensor
+        self.denom: Tensor
         self.sh_degree: int = 0
 
         self.optimizer: Optimizer
@@ -96,6 +98,8 @@ class GaussianSplatting:
             self.opacities = torch.load(load_path / "opacities.pt")
             self.sh_coeffs = torch.load(load_path / "sh.pt")
             self.quats = torch.load(load_path / "quats.pt")
+            self.acc_grad = torch.load(load_path / "acc_grad.pt")
+            self.denom = torch.load(load_path / "denom.pt")
             self.sh_degree = 4
             self.num_points = self.opacities.shape[0]
         elif point_cloud:
@@ -112,6 +116,8 @@ class GaussianSplatting:
             colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs/256), device=self.device))
             self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
             self.sh_coeffs[:,0,:] = colors
+            self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
+            self.denom = torch.zeros(self.num_points, 1, dtype=int, device=self.device)
 
             u = torch.rand(self.num_points, 1, device=self.device)
             v = torch.rand(self.num_points, 1, device=self.device)
@@ -125,7 +131,6 @@ class GaussianSplatting:
                 ],
                 -1
             )
-
             self.sh_degree = 0
         else:
             print("Randomly initialize gaussians")
@@ -135,6 +140,8 @@ class GaussianSplatting:
             self.scales = torch.rand(self.num_points, 3, device=self.device)
             self.opacities = torch.ones((self.num_points, 1), device=self.device)
             self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
+            self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
+            self.denom = torch.zeros(self.num_points, 1, dtype=int, device=self.device)
 
             u = torch.rand(self.num_points, 1, device=self.device)
             v = torch.rand(self.num_points, 1, device=self.device)
@@ -149,7 +156,7 @@ class GaussianSplatting:
                 -1
             )
             self.sh_degree = 0
-            print(f"Initialized {self.num_points} gaussians")
+        print(f"Initialized {self.num_points} gaussians")
 
     def init_optimizer(self, lr: float):
         optimize_tensors = {
@@ -202,7 +209,7 @@ class GaussianSplatting:
             for gt_view, gt_alpha, camera, _ in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
-                nv_view, nv_alpha, t0, t1 = self.rasterize(camera)
+                nv_view, nv_alpha, visibility_mask, t0, t1 = self.rasterize(camera)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
                 t2 = self.optimizer.back_propagate_loss(loss)
 
@@ -210,14 +217,16 @@ class GaussianSplatting:
                 times[1] += t1
                 times[2] += t2
 
-                if self._is_refinement_iteration(itr):
-                    self._densify_and_prune(0.0002, 0.005, 2, self.optimizer.get_learning_rate())
+                self.add_densification_states(visibility_mask)
 
                 print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
 
                 # if data_itr == 0 and itr % 5 == 0:
                 #     self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                 data_itr += 1
+            
+            if self._is_refinement_iteration(itr):
+                self._densify_and_prune(0.0002, 0.005, 2, self.optimizer.get_learning_rate())
 
         print(f"Number gaussians: {self.num_points}")
         print(f"Culls: {self.culls}, Splits: {self.splits}, Clones: {self.clones}")
@@ -237,6 +246,8 @@ class GaussianSplatting:
         torch.save(self.scales, f"{save_path}/scales.pt")  # scales
         torch.save(self.opacities, f"{save_path}/opacities.pt")  # opacities
         torch.save(self.quats, f"{save_path}/quats.pt")  # quats
+        torch.save(self.acc_grad, f"{save_path}/acc_grad.pt") # acc grads
+        torch.save(self.denom, f"{save_path}/denom.pt") # acc grads
         #
         # if len(self.frames) <= 0:
         #     return
@@ -260,7 +271,7 @@ class GaussianSplatting:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
         return spherical_harmonics(degrees_to_use, view_dirs, sh_coeffs)
 
-    def rasterize(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
+    def rasterize(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
         view_mat, project_mat = camera.get_view_and_project_matrix()
         focalx, focaly = camera.get_focal()
         width, height = camera.get_size()
@@ -287,6 +298,8 @@ class GaussianSplatting:
             BLOCK_WIDTH
         )
 
+        visibility_mask = torch.where(num_tiles_hit > 0, True, False)
+
         torch.cuda.synchronize()
         t0 = time.time() - start
         start = time.time()
@@ -308,16 +321,19 @@ class GaussianSplatting:
 
         torch.cuda.synchronize()
         t1 = time.time() - start
-        return out_img, out_alpha, t0, t1
+        return out_img, out_alpha, visibility_mask, t0, t1
 
     def render(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, float, float]:
         with torch.no_grad():
-            out_img, _, t0, t1 = self.rasterize(camera, size, color)
+            out_img, _, _, t0, t1 = self.rasterize(camera, size, color)
             return out_img, t0, t1
 
     def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
-        self._clone(grad_threshold, size_threshold, extend)
-        self._split(grad_threshold, size_threshold, extend)
+        grads = self.acc_grad / self.denom
+        grads[grads.isnan()] = 0.0
+        
+        self._clone(grads, grad_threshold, size_threshold, extend)
+        self._split(grads, grad_threshold, size_threshold, extend)
 
         opacity_threshold = utils.inverse_sigmoid(opacity_threshold)
         mask = (self.opacities <= opacity_threshold).squeeze()
@@ -325,12 +341,16 @@ class GaussianSplatting:
         self._update_tensors(self.optimizer.prune_optimizer(~mask))
         self.culls += cur_points - self.num_points
 
-    def _split(self, grad_threshold: float, size_threshold: float, extend: float):
-        view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
-        padded_view_space_gradients = torch.zeros(self.num_points - view_space_gradients.shape[0],
-                                                  view_space_gradients.shape[1], device=self.device)
-        padded_view_space_gradients = torch.cat((view_space_gradients, padded_view_space_gradients))
-        mask = torch.where(torch.norm(padded_view_space_gradients, dim=-1) > grad_threshold, True, False)
+        self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
+        self.denom = torch.zeros(self.num_points, 1, dtype=int, device= self.device)
+
+        torch.cuda.empty_cache()
+
+    def _split(self, grads: Tensor, grad_threshold: float, size_threshold: float, extend: float):
+        # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
+        padded_grads = torch.zeros(self.num_points - grads.shape[0], grads.shape[1], device=self.device)
+        padded_grads = torch.cat((grads, padded_grads))
+        mask = torch.where(torch.norm(padded_grads, dim=-1)  > grad_threshold, True, False)
         mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values > size_threshold)
 
         positional_gradient = _ProjectGaussians.getPositionalGradient()
@@ -354,13 +374,15 @@ class GaussianSplatting:
             'opacities': new_opacities,
             'quats': new_quats
         }
+
         self.optimizer.prune_optimizer(~mask)
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
         self.splits += new_opacities.shape[0]/2
 
-    def _clone(self, grad_threshold: float, size_threshold: float, extend: float):
-        view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
-        mask = torch.where(torch.norm(view_space_gradients, dim=-1) > grad_threshold, True, False)
+    def _clone(self, grads: Tensor,  grad_threshold: float, size_threshold: float, extend: float):
+        # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
+        # mask = torch.where(torch.norm(view_space_gradients, dim=-1) > grad_threshold, True, False)
+        mask = torch.where(torch.norm(grads, dim=-1) > grad_threshold, True, False)
         mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values <= size_threshold)
 
         positional_gradient = _ProjectGaussians.getPositionalGradient()[mask]
@@ -380,6 +402,11 @@ class GaussianSplatting:
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
         self.clones += new_opacities.shape[0]
 
+    def add_densification_states(self, mask: Tensor):
+        view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
+        self.acc_grad[mask] += torch.norm(view_space_gradients[mask,:2], dim=-1, keepdim=True)
+        self.denom[mask] += 1
+
     def _reset_opacity(self):
         new_opacities = torch.min(self.opacities, utils.inverse_sigmoid_tensor(torch.ones_like(self.opacities) * 0.005))
         self._update_tensors(self.optimizer.replace_optimizer_tensor(new_opacities, "opacities"))
@@ -393,7 +420,7 @@ class GaussianSplatting:
             for gt_view, gt_alpha, camera, name in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
-                nv_view, nv_alpha, _, _ = self.rasterize(camera)
+                nv_view, nv_alpha, _, _, _ = self.rasterize(camera)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
 
                 print(f"Image: {name}, Loss:{loss.item()}")
