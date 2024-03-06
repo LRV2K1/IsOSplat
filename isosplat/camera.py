@@ -117,6 +117,10 @@ class Camera:
         self.z = posz
         self.viewMatrixUpdate = True
 
+    def set_rotation(self, rotation_mat: Tensor):
+        self.rotation_mat = rotation_mat
+        self.viewMatrixUpdate = True
+
     def translate(self, posx: float, posy: float, posz: float):
         self.x += posx
         self.y += posy
