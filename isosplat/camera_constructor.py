@@ -30,27 +30,11 @@ def create_camera_from_cam_file(width: int, height: int, cam_path: Path, device:
     return camera
 
 
-def create_camera_from_sfm_data(cam_data: tuple[int, int, float, float, float, float],
-                                pos: tuple[float, float, float],
-                                dir: tuple[float, float, float],
-                                device: torch.device) -> Camera:
-    width, height, focalx, focaly, cx, cy = cam_data
-    x, y, z = pos
-    dx, dy, dz = dir
-    # camera data is in right-handed coordinate system with y down,
-    # use right-handed coordinate system with y up
-    camera = Camera(width, height, float(focalx), float(focaly), float(cx), float(cy), device)
-    camera.set_position(float(x), -float(y), -float(z))
-    camera.set_view_direction(float(dx), -float(dy), -float(dz))
-    return camera
-
-
-def create_camera_from_prep_sfm(cam_data: prep.Camera, img_data: prep.Image, device: torch.device) -> Camera:
+def create_camera_from_sfm_data(cam_data: prep.Camera, img_data: prep.Image, device: torch.device) -> Camera:
     if img_data.camera_id is not cam_data.id:
-        print("wrong")
+        print(f"image_data.camera_id: {img_data.camera_id}, and cam_data.id: {cam_data.id} are not the same")
         return None
     
-    print(img_data.name)
     R = np.transpose(img_data.qvec2rotmat())
     T = np.array(img_data.tvec)
    

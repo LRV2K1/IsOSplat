@@ -1,21 +1,17 @@
-# import depth.sfm
-# from depth.sfm import SFM
-# from depth.sfm_types import *
-
 from pathlib import Path
 import os
 from typing import Optional
 from enum import Enum
-# from PIL import Image
 
 import tyro
-# import numpy as np
+import torch
+from torch import Tensor
 
-# import torch
-# from torch import Tensor
+from isosplat.camera_constructor import image_path_to_tensor, create_camera_from_cam_file, create_camera_from_sfm_data
+from isosplat.camera import Camera
+from isosplat.gaussian_splatting import GaussianSplatting
 
-# from isosplat.camera import Camera
-# from isosplat.gaussian_splatting import GaussianSplatting
+import preprocess.colmap_loader as prep
 
 
 class Initialize(Enum):
@@ -41,18 +37,9 @@ def main(
         cam_model: CamModel = CamModel.CamFile,
         clean: bool = False
 ) -> None:
-    point_cloud = None
-    if initialize == Initialize.SFM or cam_model == CamModel.SFM:
-        from depth.sfm import SFM
-        sfm = SFM(img_path)
-        sfm.sfm(clean)
-        camera_data = sfm.get_camera_data()
-        image_data = sfm.get_image_data()
-        point_cloud = sfm.get_point_cloud()
-
-    import torch
     device = torch.device("cuda:0")
     data = []
+    point_cloud = None
 
     if img_path:
         match cam_model:
@@ -60,21 +47,22 @@ def main(
                 for file in os.listdir(img_path):
                     filename = os.fsdecode(file)
                     if filename.endswith(".cam"):
-                        from isosplat.camera_constructor import image_path_to_tensor, create_camera_from_cam_file
                         name = filename.split('.')[0]
                         gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
                         width, height = gt_image.shape[0], gt_image.shape[1]
                         camera = create_camera_from_cam_file(width, height, img_path / f"{name}.cam", device)
                         data.append((gt_image, gt_alpha, camera, name))
             case CamModel.SFM:
-                from isosplat.camera_constructor import image_path_to_tensor, create_camera_from_sfm_data
-                for name, cam_id, pos, dir in image_data:
-                    name = name.split('.')[0]
-                    camera = create_camera_from_sfm_data(camera_data[cam_id], pos, dir, device)
+                prep_point_cloud = prep.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
+                prep_images = prep.read_extrinsics_binary(img_path / "sfm" / "0" / "images.bin")
+                prep_cameras = prep.read_intrinsics_binary(img_path / "sfm" / "0" / "cameras.bin")
+                for prep_image in prep_images.values():
+                    name = prep_image.name.split('.')[0]
+                    prep_camera = prep_cameras[prep_image.camera_id]
+                    camera = create_camera_from_sfm_data(prep_camera, prep_image, device)
                     gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
                     data.append((gt_image, gt_alpha, camera, name))
     else:
-        from isosplat.camera import Camera
         gt_image = torch.ones((height, width, 3)) * 1.0
         # make top left and bottom right red, blue
         gt_image[: height // 2, : width // 2, :] = torch.tensor([1.0, 0.0, 0.0])
@@ -85,10 +73,9 @@ def main(
         camera = Camera(width, height, width/2, height/2, width/2, height/2, device)
         data = [(gt_image, gt_alpha, camera, "test")]
 
-    from isosplat.gaussian_splatting import GaussianSplatting
     trainer = GaussianSplatting(device)
 
-    trainer.init_gaussians(splats, load_path, point_cloud)
+    trainer.init_gaussians(splats, load_path, prep_point_cloud)
     trainer.init_optimizer(lr)
     if iterations > 0 and len(data) > 0:
         trainer.train(

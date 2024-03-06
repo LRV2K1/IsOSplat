@@ -24,7 +24,7 @@ import random
 BLOCK_WIDTH = 16
 
 
-PointCloud = NewType('PointCloud', list[tuple[tuple[float, float, float], tuple[int, int, int]]])
+PointCloud = NewType('PointCloud', tuple[np.array, np.array, np.array])
 
 
 class GaussianSplatting:
@@ -100,22 +100,17 @@ class GaussianSplatting:
             self.num_points = self.opacities.shape[0]
         elif point_cloud:
             print("Creating gaussians from SFM point cloud")
-            # SFM point cloud is in right-handed coordinate system with y down,
-            # use right-handed coordinate system with y up
-            mean_list = [[float(mean[0]), float(mean[1]), float(mean[2])] for mean, _ in point_cloud]
-            color_list = [[utils.inverse_sigmoid(float(color[0])/256),
-                           utils.inverse_sigmoid(float(color[1])/256),
-                           utils.inverse_sigmoid(float(color[2])/256)] for _, color in point_cloud]
+            xzys, rgbs, errors = point_cloud
 
-            self.num_points = len(mean_list)
-            self.means = torch.tensor(mean_list, device=self.device)
-
+            self.means = torch.tensor(np.float32(xzys), device=self.device)
+            self.num_points = self.means.shape[0]
+        
             #TODO scales
             self.scales = torch.ones(self.num_points, 3, device=self.device) * 0.01
             self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
 
-            colors = torch.tensor(color_list, device=self.device)
-            self.sh_coeffs = torch.ones(self.num_points, 25, 3, device=self.device)
+            colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs/256), device=self.device))
+            self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
             self.sh_coeffs[:,0,:] = colors
 
             u = torch.rand(self.num_points, 1, device=self.device)
