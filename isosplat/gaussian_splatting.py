@@ -16,7 +16,7 @@ import torch
 from torch import Tensor
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
-from gsplat import spherical_harmonics
+from isosplat import spherical_harmonics
 from PIL import Image
 
 import random

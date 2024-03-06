@@ -7,8 +7,8 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.autograd import Function
 
-import gsplat.cuda as _C
-from gsplat.utils import bin_and_sort_gaussians, compute_cumulative_intersects
+import isosplat.cuda as _C
+from isosplat.utils import bin_and_sort_gaussians, compute_cumulative_intersects
 
 
 def rasterize_gaussians(
