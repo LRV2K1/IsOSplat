@@ -35,7 +35,6 @@ def main(
         splats: int = 100000,
         initialize: Initialize = Initialize.Random,
         cam_model: CamModel = CamModel.CamFile,
-        clean: bool = False
 ) -> None:
     device = torch.device("cuda:0")
     data = []
@@ -53,13 +52,14 @@ def main(
                         camera = create_camera_from_cam_file(width, height, img_path / f"{name}.cam", device)
                         data.append((gt_image, gt_alpha, camera, name))
             case CamModel.SFM:
-                prep_point_cloud = prep.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
-                prep_images = prep.read_extrinsics_binary(img_path / "sfm" / "0" / "images.bin")
-                prep_cameras = prep.read_intrinsics_binary(img_path / "sfm" / "0" / "cameras.bin")
-                for prep_image in prep_images.values():
-                    name = prep_image.name.split('.')[0]
-                    prep_camera = prep_cameras[prep_image.camera_id]
-                    camera = create_camera_from_sfm_data(prep_camera, prep_image, device)
+                if initialize == Initialize.SFM:
+                    point_cloud = prep.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
+                images = prep.read_extrinsics_binary(img_path / "sfm" / "0" / "images.bin")
+                cameras = prep.read_intrinsics_binary(img_path / "sfm" / "0" / "cameras.bin")
+                for image in images.values():
+                    name = image.name.split('.')[0]
+                    camera_data = cameras[image.camera_id]
+                    camera = create_camera_from_sfm_data(camera_data, image, device)
                     gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
                     data.append((gt_image, gt_alpha, camera, name))
     else:
@@ -75,7 +75,7 @@ def main(
 
     trainer = GaussianSplatting(device)
 
-    trainer.init_gaussians(splats, load_path, prep_point_cloud)
+    trainer.init_gaussians(splats, load_path, point_cloud)
     trainer.init_optimizer(lr)
     if iterations > 0 and len(data) > 0:
         trainer.train(
