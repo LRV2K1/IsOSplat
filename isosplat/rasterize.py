@@ -126,6 +126,10 @@ class _RasterizeGaussians(Function):
                 torch.ones(img_height, img_width, colors.shape[-1], device=xys.device)
                 * background
             )
+            out_depth = (
+                torch.zeros(img_height, img_width, device=xys.device)
+                * background
+            )
             gaussian_ids_sorted = torch.zeros(0, 1, device=xys.device)
             tile_bins = torch.zeros(0, 2, device=xys.device)
             final_Ts = torch.zeros(img_height, img_width, device=xys.device)
@@ -152,13 +156,14 @@ class _RasterizeGaussians(Function):
             else:
                 rasterize_fn = _C.nd_rasterize_forward
 
-            out_img, final_Ts, final_idx = rasterize_fn(
+            out_img, final_Ts, out_depth, final_idx = rasterize_fn(
                 tile_bounds,
                 block,
                 img_size,
                 gaussian_ids_sorted,
                 tile_bins,
                 xys,
+                depths,
                 conics,
                 colors,
                 opacity,
@@ -183,12 +188,12 @@ class _RasterizeGaussians(Function):
 
         if return_alpha:
             out_alpha = 1 - final_Ts
-            return out_img, out_alpha
+            return out_img, out_alpha, out_depth
         else:
-            return out_img
+            return out_img, out_depth
 
     @staticmethod
-    def backward(ctx, v_out_img, v_out_alpha=None):
+    def backward(ctx, v_out_img, v_out_alpha=None, v_out_depth=None):
         img_height = ctx.img_height
         img_width = ctx.img_width
         num_intersects = ctx.num_intersects

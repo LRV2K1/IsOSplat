@@ -284,7 +284,8 @@ __global__ void nd_rasterize_forward(
             for (int c = 0; c < channels; ++c) {
                 pix_out[c] = __hadd(pix_out[c], __float2half(colors[channels * g + c] * vis));
             }
-            pix_depth = pix_depth + depth[g] * vis; //new, todo
+
+            pix_depth = pix_depth + depths[g] * vis; //new, todo
             T = next_T;
             cur_idx = batch_start + t;
         }
@@ -298,7 +299,7 @@ __global__ void nd_rasterize_forward(
         for (int c = 0; c < channels; ++c) {
             out_img[pix_id * channels + c] = __half2float(pix_out[c]) + T * background[c];
         }
-        out_depth[pix_id] = pix_depth   //new, todo
+        out_depth[pix_id] = pix_depth;   //new, todo
     }
 }
 
@@ -412,7 +413,7 @@ __global__ void rasterize_forward(
             pix_out.x = pix_out.x + c.x * vis;
             pix_out.y = pix_out.y + c.y * vis;
             pix_out.z = pix_out.z + c.z * vis;
-            pix_depth = pix_depth + depth[g] * vis; //new, todo
+            pix_depth = pix_depth + depths[g] * vis; //new, todo
             T = next_T;
             cur_idx = batch_start + t;
         }
@@ -428,7 +429,7 @@ __global__ void rasterize_forward(
         final_color.y = pix_out.y + T * background.y;
         final_color.z = pix_out.z + T * background.z;
         out_img[pix_id] = final_color;
-        out_depth[pix_id] = pix_depth   //new, todo
+        out_depth[pix_id] = pix_depth;   //new, todo
     }
 }
 

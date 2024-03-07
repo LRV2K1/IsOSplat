@@ -336,7 +336,7 @@ torch::Tensor get_tile_bin_edges_tensor(
     return tile_bins;
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 rasterize_forward_tensor(
     const std::tuple<int, int, int> tile_bounds,
     const std::tuple<int, int, int> block,
@@ -344,6 +344,7 @@ rasterize_forward_tensor(
     const torch::Tensor &gaussian_ids_sorted,
     const torch::Tensor &tile_bins,
     const torch::Tensor &xys,
+    const torch::Tensor &depths, //new, todo
     const torch::Tensor &conics,
     const torch::Tensor &colors,
     const torch::Tensor &opacities,
@@ -352,6 +353,7 @@ rasterize_forward_tensor(
     CHECK_INPUT(gaussian_ids_sorted);
     CHECK_INPUT(tile_bins);
     CHECK_INPUT(xys);
+    CHECK_INPUT(depths); //new, todo
     CHECK_INPUT(conics);
     CHECK_INPUT(colors);
     CHECK_INPUT(opacities);
@@ -384,6 +386,9 @@ rasterize_forward_tensor(
     );
     torch::Tensor final_idx = torch::zeros(
         {img_height, img_width}, xys.options().dtype(torch::kInt32)
+    );
+    torch::Tensor out_depth = torch::zeros(     //new, todo
+        {img_height, img_width}, xys.options().dtype(torch::kFloat32)
     );
 
     rasterize_forward<<<tile_bounds_dim3, block_dim3>>>(
@@ -392,20 +397,22 @@ rasterize_forward_tensor(
         gaussian_ids_sorted.contiguous().data_ptr<int32_t>(),
         (int2 *)tile_bins.contiguous().data_ptr<int>(),
         (float2 *)xys.contiguous().data_ptr<float>(),
+        depths.contiguous().data_ptr<float>(), //new, todo
         (float3 *)conics.contiguous().data_ptr<float>(),
         (float3 *)colors.contiguous().data_ptr<float>(),
         opacities.contiguous().data_ptr<float>(),
         final_Ts.contiguous().data_ptr<float>(),
         final_idx.contiguous().data_ptr<int>(),
         (float3 *)out_img.contiguous().data_ptr<float>(),
+        out_depth.contiguous().data_ptr<float>(), //new, todo
         *(float3 *)background.contiguous().data_ptr<float>()
     );
 
-    return std::make_tuple(out_img, final_Ts, final_idx);
+    return std::make_tuple(out_img, final_Ts, out_depth, final_idx);
 }
 
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 nd_rasterize_forward_tensor(
     const std::tuple<int, int, int> tile_bounds,
     const std::tuple<int, int, int> block,
@@ -413,6 +420,7 @@ nd_rasterize_forward_tensor(
     const torch::Tensor &gaussian_ids_sorted,
     const torch::Tensor &tile_bins,
     const torch::Tensor &xys,
+    const torch::Tensor &depths, //new, todo
     const torch::Tensor &conics,
     const torch::Tensor &colors,
     const torch::Tensor &opacities,
@@ -421,6 +429,7 @@ nd_rasterize_forward_tensor(
     CHECK_INPUT(gaussian_ids_sorted);
     CHECK_INPUT(tile_bins);
     CHECK_INPUT(xys);
+    CHECK_INPUT(depths); //new, todo
     CHECK_INPUT(conics);
     CHECK_INPUT(colors);
     CHECK_INPUT(opacities);
@@ -454,6 +463,10 @@ nd_rasterize_forward_tensor(
     torch::Tensor final_idx = torch::zeros(
         {img_height, img_width}, xys.options().dtype(torch::kInt32)
     );
+    torch::Tensor out_depth = torch::zeros(     //new, todo
+        {img_height, img_width}, xys.options().dtype(torch::kFloat32)
+    );
+
     const int B = block_dim3.x * block_dim3.y;
     const uint32_t shared_mem = B*sizeof(int) + B*sizeof(float3) + B*sizeof(float3) + B*channels*sizeof(half);
     if(cudaFuncSetAttribute(nd_rasterize_forward, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_mem) != cudaSuccess){
@@ -467,16 +480,18 @@ nd_rasterize_forward_tensor(
         gaussian_ids_sorted.contiguous().data_ptr<int32_t>(),
         (int2 *)tile_bins.contiguous().data_ptr<int>(),
         (float2 *)xys.contiguous().data_ptr<float>(),
+        depths.contiguous().data_ptr<float>(), //new, todo
         (float3 *)conics.contiguous().data_ptr<float>(),
         colors.contiguous().data_ptr<float>(),
         opacities.contiguous().data_ptr<float>(),
         final_Ts.contiguous().data_ptr<float>(),
         final_idx.contiguous().data_ptr<int>(),
         out_img.contiguous().data_ptr<float>(),
+        out_depth.contiguous().data_ptr<float>(), //new, todo
         background.contiguous().data_ptr<float>()
     );
 
-    return std::make_tuple(out_img, final_Ts, final_idx);
+    return std::make_tuple(out_img, final_Ts, out_depth, final_idx);
 }
 
 

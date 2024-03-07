@@ -209,7 +209,7 @@ class GaussianSplatting:
             for gt_view, gt_alpha, camera, _ in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
-                nv_view, nv_alpha, visibility_mask, t0, t1 = self.rasterize(camera)
+                nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
                 t2 = self.optimizer.back_propagate_loss(loss)
 
@@ -217,12 +217,12 @@ class GaussianSplatting:
                 times[1] += t1
                 times[2] += t2
 
-                self.add_densification_states(visibility_mask)
+                self.add_densification_states()
 
                 print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
 
-                if data_itr == 0 and itr % 5 == 0:
-                    self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
+                # if data_itr == 0 and itr % 5 == 0:
+                    # self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):
@@ -298,13 +298,11 @@ class GaussianSplatting:
             BLOCK_WIDTH
         )
 
-        visibility_mask = torch.where(num_tiles_hit > 0, True, False)
-
         torch.cuda.synchronize()
         t0 = time.time() - start
         start = time.time()
 
-        out_img, out_alpha = _RasterizeGaussians.apply(
+        out_img, out_alpha, out_depth = _RasterizeGaussians.apply(
             xys,
             depths,
             radii,
@@ -321,7 +319,7 @@ class GaussianSplatting:
 
         torch.cuda.synchronize()
         t1 = time.time() - start
-        return out_img, out_alpha, visibility_mask, t0, t1
+        return out_img, out_alpha, out_depth, t0, t1
 
     def render(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, float, float]:
         with torch.no_grad():
@@ -402,8 +400,9 @@ class GaussianSplatting:
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
         self.clones += new_opacities.shape[0]
 
-    def add_densification_states(self, mask: Tensor):
+    def add_densification_states(self):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
+        mask = torch.where(torch.norm(view_space_gradients, dim=-1) > 0, True, False)
         self.acc_grad[mask] += torch.norm(view_space_gradients[mask,:2], dim=-1, keepdim=True)
         self.denom[mask] += 1
 
@@ -420,7 +419,7 @@ class GaussianSplatting:
             for gt_view, gt_alpha, camera, name in data:
                 gt_view = gt_view.to(device=self.device)
                 gt_alpha = gt_alpha.to(device=self.device)
-                nv_view, nv_alpha, _, _, _ = self.rasterize(camera)
+                nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
 
                 print(f"Image: {name}, Loss:{loss.item()}")
@@ -430,3 +429,12 @@ class GaussianSplatting:
 
                     image = Image.fromarray((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                     image.save(f"{save_path}/{name}_render.png")
+
+                    norm_depth = nv_depth - nv_depth.min()
+                    norm_depth /= norm_depth.max()
+                    norm_depth *= -1.0
+                    norm_depth += 1.0
+                    depth_map = norm_depth[:,:,None]
+                    depth_map = depth_map.repeat(1,1,3)
+                    depth_image = Image.fromarray((depth_map.detach().cpu().numpy() * 255).astype(np.uint8))
+                    depth_image.save(f"{save_path}/{name}_depth.png")
