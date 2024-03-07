@@ -77,13 +77,7 @@ class RendererThread:
             norm_depth /= norm_depth.max()
         norm_depth *= -1.0
         norm_depth += 1.0
-        depth_map = norm_depth[:, :, None]
-        depth_map = depth_map.repeat(1, 1, 3)
-        try:
-            depth = Image.fromarray((depth_map.detach().cpu().numpy() * 255).astype(np.uint8))
-        except:
-            print(depth_map.min())
-            print(depth_map.max())
+        depth = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
         return img.resize((width, height)), depth.resize((width, height))
 
 
