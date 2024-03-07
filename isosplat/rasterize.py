@@ -128,7 +128,6 @@ class _RasterizeGaussians(Function):
             )
             out_depth = (
                 torch.zeros(img_height, img_width, device=xys.device)
-                * background
             )
             gaussian_ids_sorted = torch.zeros(0, 1, device=xys.device)
             tile_bins = torch.zeros(0, 2, device=xys.device)

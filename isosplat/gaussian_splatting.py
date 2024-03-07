@@ -431,10 +431,12 @@ class GaussianSplatting:
                     image.save(f"{save_path}/{name}_render.png")
 
                     norm_depth = nv_depth - nv_depth.min()
-                    norm_depth /= norm_depth.max()
+                    m = norm_depth.max()
+                    if m > 0.0:
+                        norm_depth /= norm_depth.max()
                     norm_depth *= -1.0
                     norm_depth += 1.0
-                    depth_map = norm_depth[:,:,None]
-                    depth_map = depth_map.repeat(1,1,3)
+                    depth_map = norm_depth[:, :, None]
+                    depth_map = depth_map.repeat(1, 1, 3)
                     depth_image = Image.fromarray((depth_map.detach().cpu().numpy() * 255).astype(np.uint8))
                     depth_image.save(f"{save_path}/{name}_depth.png")

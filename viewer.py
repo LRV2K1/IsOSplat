@@ -23,8 +23,8 @@ class RendererThread:
         # self.renderer.init_axis()
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
-        self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
-        # self.camera = Camera(400, 400, 480, 480, 200, 200, device)
+        # self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
+        self.camera = Camera(400, 400, 480, 480, 200, 200, device)
 
         self.anglh = 0.0
         self.anglv = 0.0
@@ -67,24 +67,30 @@ class RendererThread:
     def _update_camera(self):
         self.camera.orbit(self.x, self.y, self.z, self.dis, self.anglh, self.anglv)
 
-    def render(self, width: int, height: int) -> tuple[Image, Image]:
+    def render(self, width: int, height: int) -> tuple[Image.Image, Image.Image]:
         out_img, out_depth, _, _ = self.renderer.render(self.camera, self.size, self.background)
         img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
 
         norm_depth = out_depth - out_depth.min()
-        norm_depth /= norm_depth.max()
+        m = norm_depth.max()
+        if m > 0.0:
+            norm_depth /= norm_depth.max()
         norm_depth *= -1.0
         norm_depth += 1.0
         depth_map = norm_depth[:, :, None]
         depth_map = depth_map.repeat(1, 1, 3)
-        depth = Image.fromarray((depth_map.detach().cpu().numpy() * 255).astype(np.uint8))
+        try:
+            depth = Image.fromarray((depth_map.detach().cpu().numpy() * 255).astype(np.uint8))
+        except:
+            print(depth_map.min())
+            print(depth_map.max())
         return img.resize((width, height)), depth.resize((width, height))
 
 
 class Viewer:
     def __init__(self, load_path: Path):
-        self.width = 1200
-        # self.width = 800
+        # self.width = 1200
+        self.width = 800
         self.height = 800
         self.root = Tk()
         self.root.title("IsOSplat")
