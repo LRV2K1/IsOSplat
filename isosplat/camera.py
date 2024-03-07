@@ -70,16 +70,7 @@ class Camera:
                 ],
                 device=self.device
             )
-            flip_mat = torch.tensor(
-                [
-                    [-1.0, 0.0, 0.0, 0],
-                    [0.0, -1.0, 0.0, 0],
-                    [0.0, 0.0, 1.0, 0],
-                    [0.0, 0.0, 0.0, 1.0]
-                ],
-                device=self.device
-            )
-            self.model_view_mat = torch.matmul(torch.matmul(self.rotation_mat, translation_mat), flip_mat)
+            self.model_view_mat = torch.matmul(self.rotation_mat, translation_mat)
             self.model_view_mat.requires_grad = False
 
             self.project_matrix = torch.matmul(self.perspective_project_mat, self.model_view_mat)
