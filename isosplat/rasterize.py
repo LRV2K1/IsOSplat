@@ -199,6 +199,8 @@ class _RasterizeGaussians(Function):
 
         if v_out_alpha is None:
             v_out_alpha = torch.zeros_like(v_out_img[..., 0])
+        if v_out_depth is None:
+            v_out_depth = torch.zeros_like(v_out_img[..., 0])
 
         (
             gaussian_ids_sorted,
@@ -223,7 +225,7 @@ class _RasterizeGaussians(Function):
                 rasterize_fn = _C.rasterize_backward
             else:
                 rasterize_fn = _C.nd_rasterize_backward
-            v_xy, v_conic, v_colors, v_opacity = rasterize_fn(
+            v_xy, v_conic, v_colors, v_opacity, v_depth = rasterize_fn(
                 img_height,
                 img_width,
                 ctx.block_width,
@@ -238,13 +240,14 @@ class _RasterizeGaussians(Function):
                 final_idx,
                 v_out_img,
                 v_out_alpha,
+                v_out_depth
             )
 
         _RasterizeGaussians.last_v_xy = v_xy
 
         return (
             v_xy,  # xys
-            None,  # depths
+            v_depth,  # depths
             None,  # radii
             v_conic,  # conics
             None,  # num_tiles_hit

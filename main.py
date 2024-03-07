@@ -35,9 +35,11 @@ def main(
         splats: int = 100000,
         initialize: Initialize = Initialize.Random,
         cam_model: CamModel = CamModel.CamFile,
+        no_depth: bool = False
 ) -> None:
     device = torch.device("cuda:0")
-    data = []
+    data_list = []
+    data = {}
     point_cloud = None
 
     if img_path:
@@ -47,10 +49,12 @@ def main(
                     filename = os.fsdecode(file)
                     if filename.endswith(".cam"):
                         name = filename.split('.')[0]
-                        gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
+                        gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png", device)
                         width, height = gt_image.shape[0], gt_image.shape[1]
                         camera = create_camera_from_cam_file(width, height, img_path / f"{name}.cam", device)
-                        data.append((gt_image, gt_alpha, camera, name))
+                        
+                        data[name] = gt_image, camera, {}
+                        data_list.append(name)
             case CamModel.SFM:
                 if initialize == Initialize.SFM:
                     point_cloud = prep.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
@@ -60,29 +64,39 @@ def main(
                     name = image.name.split('.')[0]
                     camera_data = cameras[image.camera_id]
                     camera = create_camera_from_sfm_data(camera_data, image, device)
-                    gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png")
-                    data.append((gt_image, gt_alpha, camera, name))
+                    gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png", device)
+                    
+                    data[name] = gt_image, camera, {}
+                    data_list.append(name)
     else:
-        gt_image = torch.ones((height, width, 3)) * 1.0
+        gt_image = torch.ones((height, width, 3), device=device) * 1.0
         # make top left and bottom right red, blue
-        gt_image[: height // 2, : width // 2, :] = torch.tensor([1.0, 0.0, 0.0])
-        gt_image[height // 2:, width // 2:, :] = torch.tensor([0.0, 0.0, 1.0])
+        gt_image[: height // 2, : width // 2, :] = torch.tensor([1.0, 0.0, 0.0], device=device)
+        gt_image[height // 2:, width // 2:, :] = torch.tensor([0.0, 0.0, 1.0], device=device)
 
-        gt_alpha = torch.ones((height, width)) * 1.0
+        add_data = {}
+
+        gt_alpha = torch.ones((height, width), device=device) * 1.0
+        add_data["alpha"] = gt_alpha
+        if not no_depth:
+            gt_depth = torch.ones((height, width), device=device) * 7.0
+            add_data["depth"] = gt_depth
 
         camera = Camera(width, height, width/2, height/2, width/2, height/2, device)
-        data = [(gt_image, gt_alpha, camera, "test")]
+        data_list = ["test"]
+        data = {"test": (gt_image, camera, add_data)}
 
     trainer = GaussianSplatting(device)
 
     trainer.init_gaussians(splats, load_path, point_cloud)
     trainer.init_optimizer(lr)
-    if iterations > 0 and len(data) > 0:
+    if iterations > 0 and len(data_list) > 0:
         trainer.train(
+            data_list=data_list,
             data=data,
             iterations=iterations,
         )
-    trainer.verify(data, save_path)
+    trainer.verify(data_list, data, save_path)
     if save_path:
         trainer.save(save_path)
 

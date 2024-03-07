@@ -44,12 +44,12 @@ __global__ void nd_rasterize_backward_kernel(
     const int* __restrict__ final_index,
     const float* __restrict__ v_output,
     const float* __restrict__ v_output_alpha,
-    //const float* __restrict__ v_output_depth, //new, todo
+    const float* __restrict__ v_output_depth, //new, todo
     float2* __restrict__ v_xy,
     float3* __restrict__ v_conic,
     float* __restrict__ v_rgb,
-    float* __restrict__ v_opacity
-    //float* __restrict__ v_depth     //new, todo
+    float* __restrict__ v_opacity,
+    float* __restrict__ v_depth     //new, todo
 );
 
 __global__ void rasterize_backward_kernel(
@@ -66,12 +66,12 @@ __global__ void rasterize_backward_kernel(
     const int* __restrict__ final_index,
     const float3* __restrict__ v_output,
     const float* __restrict__ v_output_alpha,
-    //const float* __restrict__ v_output_depth, //new, todo
+    const float* __restrict__ v_output_depth, //new, todo
     float2* __restrict__ v_xy,
     float3* __restrict__ v_conic,
     float3* __restrict__ v_rgb,
-    float* __restrict__ v_opacity
-    //float* __restrict__ v_depth     //new, todo
+    float* __restrict__ v_opacity,
+    float* __restrict__ v_depth     //new, todo
 );
 
 __device__ void project_cov3d_ewa_vjp(

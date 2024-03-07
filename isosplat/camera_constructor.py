@@ -61,7 +61,7 @@ def create_camera_from_sfm_data(cam_data: prep.Camera, img_data: prep.Image, dev
     camera.set_rotation(view)
     return camera
 
-def image_path_to_tensor(image_path: Path) -> tuple[Tensor, Tensor]:
+def image_path_to_tensor(image_path: Path, device: torch.device) -> tuple[Tensor, Tensor]:
     import torchvision.transforms as transforms
 
     img = Image.open(image_path)
@@ -72,4 +72,6 @@ def image_path_to_tensor(image_path: Path) -> tuple[Tensor, Tensor]:
         img_alpha_tensor = img_transform.permute(1, 2, 0)[..., 3]
     else:
         img_alpha_tensor = torch.ones(img_tensor.shape[0], img_tensor.shape[0]) * 1.0
+    img_tensor = img_tensor.to(device=device)
+    img_alpha_tensor = img_alpha_tensor.to(device=device)
     return img_tensor, img_alpha_tensor

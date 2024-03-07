@@ -35,12 +35,12 @@ __global__ void nd_rasterize_backward_kernel(
     const int* __restrict__ final_index,
     const float* __restrict__ v_output,
     const float* __restrict__ v_output_alpha,
-    //const float* __restrict__ v_output_depth, //new, todo
+    const float* __restrict__ v_output_depth, //new, todo
     float2* __restrict__ v_xy,
     float3* __restrict__ v_conic,
     float* __restrict__ v_rgb,
-    float* __restrict__ v_opacity
-    //float* __restrict__ v_depth     //new, todo
+    float* __restrict__ v_opacity,
+    float* __restrict__ v_depth     //new, todo
 ) {
     auto block = cg::this_thread_block();
     const int tr = block.thread_rank();
@@ -58,7 +58,7 @@ __global__ void nd_rasterize_backward_kernel(
     // df/d_out for this pixel
     const float *v_out = &(v_output[channels * pix_id]);
     const float v_out_alpha = v_output_alpha[pix_id];
-    //const float v_out_depth = v_output_depth[pix_id];   //new, depth
+    const float v_out_depth = v_output_depth[pix_id];   //new, depth
     // this is the T AFTER the last gaussian in this pixel
     float T_final = final_Ts[pix_id];
     float T = T_final;
@@ -98,7 +98,7 @@ __global__ void nd_rasterize_backward_kernel(
         float3 v_conic_local = {0.f, 0.f, 0.f};
         float2 v_xy_local = {0.f, 0.f};
         float v_opacity_local = 0.f;
-        //float v_depth_local = 0.f; //new, todo
+        float v_depth_local = 0.f; //new, todo
         if(valid){
             // compute the current T for this gaussian
             const float ra = 1.f / (1.f - alpha);
@@ -115,7 +115,7 @@ __global__ void nd_rasterize_backward_kernel(
                 // update the running sum
                 S[c] = __hadd(S[c], __float2half(rgbs[channels * g + c] * fac));
             }
-            //v_depth_local = fac * v_out_depth;  //new, todo
+            v_depth_local = fac * v_out_depth;  //new, todo
             v_alpha += T_final * ra * v_out_alpha;
             const float v_sigma = -opac * vis * v_alpha;
             v_conic_local = {0.5f * v_sigma * delta.x * delta.x, 
@@ -128,7 +128,7 @@ __global__ void nd_rasterize_backward_kernel(
         warpSum3(v_conic_local, warp);
         warpSum2(v_xy_local, warp);
         warpSum(v_opacity_local, warp);
-        //warpSum(v_depth_local, warp); //new, todo
+        warpSum(v_depth_local, warp); //new, todo
         if (warp.thread_rank() == 0) {
             float* v_conic_ptr = (float*)(v_conic);
             atomicAdd(v_conic_ptr + 3*g + 0, v_conic_local.x);
@@ -141,7 +141,7 @@ __global__ void nd_rasterize_backward_kernel(
             
             atomicAdd(v_opacity + g, v_opacity_local);
 
-            //atomicAdd(v_depth + g, v_depth_local); //new, todo
+            atomicAdd(v_depth + g, v_depth_local); //new, todo
         }
     }
 }
@@ -160,12 +160,12 @@ __global__ void rasterize_backward_kernel(
     const int* __restrict__ final_index,
     const float3* __restrict__ v_output,
     const float* __restrict__ v_output_alpha,
-    //const float* __restrict__ v_output_depth, //new, todo
+    const float* __restrict__ v_output_depth, //new, todo
     float2* __restrict__ v_xy,
     float3* __restrict__ v_conic,
     float3* __restrict__ v_rgb,
-    float* __restrict__ v_opacity
-    //float* __restrict__ v_depth     //new, todo
+    float* __restrict__ v_opacity,
+    float* __restrict__ v_depth     //new, todo
 ) {
     auto block = cg::this_thread_block();
     int32_t tile_id =
@@ -206,7 +206,7 @@ __global__ void rasterize_backward_kernel(
     // df/d_out for this pixel
     const float3 v_out = v_output[pix_id];
     const float v_out_alpha = v_output_alpha[pix_id];
-    //const float v_out_depth = v_output_depth[pix_id];   //new, depth
+    const float v_out_depth = v_output_depth[pix_id];   //new, depth
 
     // collect and process batches of gaussians
     // each thread loads one gaussian at a time before rasterizing
@@ -269,7 +269,7 @@ __global__ void rasterize_backward_kernel(
             float3 v_conic_local = {0.f, 0.f, 0.f};
             float2 v_xy_local = {0.f, 0.f};
             float v_opacity_local = 0.f;
-            //float v_depth_local = 0.f; //new, todo
+            float v_depth_local = 0.f; //new, todo
             //initialize everything to 0, only set if the lane is valid
             if(valid){
                 // compute the current T for this gaussian
@@ -279,7 +279,7 @@ __global__ void rasterize_backward_kernel(
                 const float fac = alpha * T;
                 float v_alpha = 0.f;
                 v_rgb_local = {fac * v_out.x, fac * v_out.y, fac * v_out.z};
-                //v_depth_local = fac * v_out_depth;  //new, todo
+                v_depth_local = fac * v_out_depth;  //new, todo
 
                 const float3 rgb = rgbs_batch[t];
                 // contribution from this pixel
@@ -309,7 +309,7 @@ __global__ void rasterize_backward_kernel(
             warpSum3(v_conic_local, warp);
             warpSum2(v_xy_local, warp);
             warpSum(v_opacity_local, warp);
-            //warpSum(v_depth_local, warp); //new, todo
+            warpSum(v_depth_local, warp); //new, todo
             if (warp.thread_rank() == 0) {
                 int32_t g = id_batch[t];
                 float* v_rgb_ptr = (float*)(v_rgb);
@@ -328,7 +328,7 @@ __global__ void rasterize_backward_kernel(
                 
                 atomicAdd(v_opacity + g, v_opacity_local);
 
-                //atomicAdd(v_depth + g, v_depth_local); //new, todo
+                atomicAdd(v_depth + g, v_depth_local); //new, todo
             }
         }
     }

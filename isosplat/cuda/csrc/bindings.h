@@ -150,7 +150,8 @@ std::
         torch::Tensor, // dL_dxy
         torch::Tensor, // dL_dconic
         torch::Tensor, // dL_dcolors
-        torch::Tensor  // dL_dopacity
+        torch::Tensor, // dL_dopacity
+        torch::Tensor  // dL_ddepth     new, todo
         >
     nd_rasterize_backward_tensor(
         const unsigned img_height,
@@ -166,7 +167,8 @@ std::
         const torch::Tensor &final_Ts,
         const torch::Tensor &final_idx,
         const torch::Tensor &v_output, // dL_dout_color
-        const torch::Tensor &v_output_alpha
+        const torch::Tensor &v_output_alpha,
+        const torch::Tensor &v_output_depth //new, todo
     );
 
 std::
@@ -174,7 +176,8 @@ std::
         torch::Tensor, // dL_dxy
         torch::Tensor, // dL_dconic
         torch::Tensor, // dL_dcolors
-        torch::Tensor  // dL_dopacity
+        torch::Tensor, // dL_dopacity
+        torch::Tensor  // dL_ddepth     new, todo
         >
     rasterize_backward_tensor(
         const unsigned img_height,
@@ -190,5 +193,6 @@ std::
         const torch::Tensor &final_Ts,
         const torch::Tensor &final_idx,
         const torch::Tensor &v_output, // dL_dout_color
-        const torch::Tensor &v_output_alpha
+        const torch::Tensor &v_output_alpha,
+        const torch::Tensor &v_output_depth //new, todo
     );

@@ -192,8 +192,7 @@ class GaussianSplatting:
     def _add_sh_band(self, itr: int) -> bool:
         return self.sh_degree < 4 and itr % 1000 == 0 and itr > 0
 
-    def train(self, data: list[tuple[Tensor, Tensor, Camera, str]], iterations: int = 200):
-        self.frames = []
+    def train(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], iterations: int = 200):
         times = [0] * 3
 
         n_data = len(data)
@@ -205,12 +204,18 @@ class GaussianSplatting:
             if self._add_sh_band(itr):
                 self.sh_degree += 1
 
-            random.shuffle(data)
-            for gt_view, gt_alpha, camera, _ in data:
-                gt_view = gt_view.to(device=self.device)
-                gt_alpha = gt_alpha.to(device=self.device)
+            random.shuffle(data_list)
+            for name in data_list:
+                gt_view, camera, add_data = data[name]
+                gt_alpha = None
+                if "alpha" in add_data:
+                    gt_alpha = add_data["alpha"]
+                gt_depth = None
+                if "depth" in add_data:
+                    gt_depth = add_data["depth"]
+                
                 nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera)
-                loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
+                loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
                 t2 = self.optimizer.back_propagate_loss(loss)
 
                 times[0] += t0
@@ -220,9 +225,6 @@ class GaussianSplatting:
                 self.add_densification_states()
 
                 print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
-
-                # if data_itr == 0 and itr % 5 == 0:
-                    # self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):
@@ -248,24 +250,6 @@ class GaussianSplatting:
         torch.save(self.quats, f"{save_path}/quats.pt")  # quats
         torch.save(self.acc_grad, f"{save_path}/acc_grad.pt") # acc grads
         torch.save(self.denom, f"{save_path}/denom.pt") # acc grads
-        
-        if len(self.frames) <= 0:
-            return
-
-        self.frames = [Image.fromarray(frame) for frame in self.frames]
-        self.frames[0].save(
-            f"{save_path}/training.gif",
-            save_all=True,
-            append_images=self.frames[1:],
-            optimize=False,
-            duration=5,
-            loop=0,
-        )
-        self.frames[-1].save(
-            f"{save_path}/training.png",
-            save_all=True,
-            optimize=False,
-        )
 
     def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
@@ -410,17 +394,26 @@ class GaussianSplatting:
         new_opacities = torch.min(self.opacities, utils.inverse_sigmoid_tensor(torch.ones_like(self.opacities) * 0.005))
         self._update_tensors(self.optimizer.replace_optimizer_tensor(new_opacities, "opacities"))
 
-    def loss(self, gt_view: Tensor, nv_view: Tensor, gt_alpha: Tensor, nv_alpha: Tensor) -> Tensor:
-        return 0.8 * loss_functions.l1_loss(nv_view, gt_view) + (1.0 - loss_functions.ssim(nv_view, gt_view))
+    def loss(self, gt_view: Tensor, nv_view: Tensor, gt_alpha: Tensor = None, nv_alpha: Tensor = None, gt_depth: Tensor = None, nv_depth: Tensor = None) -> Tensor:
+        loss = 0.8 * loss_functions.l1_loss(nv_view, gt_view) + (1.0 - loss_functions.ssim(nv_view, gt_view))
+        if gt_depth is not None and nv_depth is not None:
+            loss += loss_functions.l1_loss(nv_depth, gt_depth)
+        return loss
 
-    def verify(self, data: list[tuple[Tensor, Tensor, Camera, str]], save_path: Optional[Path] = None):
+    def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], save_path: Optional[Path] = None):
 
         with torch.no_grad():
-            for gt_view, gt_alpha, camera, name in data:
-                gt_view = gt_view.to(device=self.device)
-                gt_alpha = gt_alpha.to(device=self.device)
+            for name in data_list:
+                gt_view, camera, add_data = data[name]
+                gt_alpha = None
+                if "alpha" in add_data:
+                    gt_alpha = add_data["alpha"]
+                gt_depth = None
+                if "depth" in add_data:
+                    gt_depth = add_data["depth"]
+
                 nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera)
-                loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha)
+                loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
 
                 print(f"Image: {name}, Loss:{loss.item()}")
                 if save_path:
