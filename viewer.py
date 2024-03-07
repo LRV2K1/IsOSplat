@@ -67,10 +67,18 @@ class RendererThread:
     def _update_camera(self):
         self.camera.orbit(self.x, self.y, self.z, self.dis, self.anglh, self.anglv)
 
-    def render(self, width: int, height: int) -> Image:
-        out_img, _, _ = self.renderer.render(self.camera, self.size, self.background)
+    def render(self, width: int, height: int) -> tuple[Image, Image]:
+        out_img, out_depth, _, _ = self.renderer.render(self.camera, self.size, self.background)
         img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
-        return img.resize((width, height))
+
+        norm_depth = out_depth - out_depth.min()
+        norm_depth /= norm_depth.max()
+        norm_depth *= -1.0
+        norm_depth += 1.0
+        depth_map = norm_depth[:, :, None]
+        depth_map = depth_map.repeat(1, 1, 3)
+        depth = Image.fromarray((depth_map.detach().cpu().numpy() * 255).astype(np.uint8))
+        return img.resize((width, height)), depth.resize((width, height))
 
 
 class Viewer:
@@ -104,12 +112,16 @@ class Viewer:
         self.background_toggle = Button(self.root, text="Background", command=self._toggle_background)
         self.background_toggle.place(relx=1, x=-10, y=10, anchor=NE)
 
+        self.depth_toggle = Button(self.root, text="Depth", command=self._toggle_depth)
+        self.depth_toggle.place(relx=1, x=-10, y=50, anchor=NE)
+
         self.prev_image: ImageTk.PhotoImage
 
         self.renderer = RendererThread(load_path)
 
         self.dragging = False
         self.drag_space = True
+        self.show_depth = False
         self.last_x = 0.0
         self.last_y = 0.0
 
@@ -138,14 +150,20 @@ class Viewer:
         self.label.configure(text=f"{size:.2f}")
 
         self.renderer.set_size(size)
-        img = self.renderer.render(self.width, self.height)
-        final_img = ImageTk.PhotoImage(img)
+        img, depth = self.renderer.render(self.width, self.height)
+        if self.show_depth:
+            final_img = ImageTk.PhotoImage(depth)
+        else:
+            final_img = ImageTk.PhotoImage(img)
         self.panel.configure(image=final_img)
         self.prev_image = final_img
         self.root.after(20, self.render_loop)
 
     def _toggle_background(self):
         self.renderer.toggle_background()
+
+    def _toggle_depth(self):
+        self.show_depth = not self.show_depth
 
     def _on_close(self):
         print("close")

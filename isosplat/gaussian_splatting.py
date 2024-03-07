@@ -321,10 +321,10 @@ class GaussianSplatting:
         t1 = time.time() - start
         return out_img, out_alpha, out_depth, t0, t1
 
-    def render(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, float, float]:
+    def render(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
         with torch.no_grad():
-            out_img, _, _, t0, t1 = self.rasterize(camera, size, color)
-            return out_img, t0, t1
+            out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, color)
+            return out_img, out_depth, t0, t1
 
     def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
         grads = self.acc_grad / self.denom
