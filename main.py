@@ -79,7 +79,7 @@ def main(
         gt_alpha = torch.ones((height, width), device=device) * 1.0
         add_data["alpha"] = gt_alpha
         if not no_depth:
-            gt_depth = torch.ones((height, width), device=device) * 7.0
+            gt_depth = (torch.ones((height, width), device=device) * 7.0)
             add_data["depth"] = gt_depth
 
         camera = Camera(width, height, width/2, height/2, width/2, height/2, device)

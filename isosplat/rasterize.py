@@ -23,6 +23,7 @@ def rasterize_gaussians(
     img_width: int,
     block_width: int,
     background: Optional[Float[Tensor, "channels"]] = None,
+    background_depth: float = 20.0,
     return_alpha: Optional[bool] = False,
 ) -> Tensor:
     """Rasterizes 2D gaussians by sorting and binning gaussian intersections for each tile and returns an N-dimensional output using alpha-compositing.
@@ -42,6 +43,7 @@ def rasterize_gaussians(
         img_width (int): width of the rendered image.
         block_width (int): MUST match whatever block width was used in the project_gaussians call. integer number of pixels between 2 and 16 inclusive
         background (Tensor): background color
+        background_depth (float): background depth
         return_alpha (bool): whether to return alpha channel
 
     Returns:
@@ -82,6 +84,7 @@ def rasterize_gaussians(
         img_width,
         block_width,
         background.contiguous(),
+        background_depth,
         return_alpha,
     )
 
@@ -108,6 +111,7 @@ class _RasterizeGaussians(Function):
         img_width: int,
         block_width: int,
         background: Optional[Float[Tensor, "channels"]] = None,
+        background_depth: float = 20.0,
         return_alpha: Optional[bool] = False,
     ) -> Tensor:
         num_points = xys.size(0)
@@ -167,6 +171,7 @@ class _RasterizeGaussians(Function):
                 colors,
                 opacity,
                 background,
+                background_depth
             )
 
         ctx.img_width = img_width

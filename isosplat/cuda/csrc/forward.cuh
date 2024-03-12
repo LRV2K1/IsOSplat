@@ -40,7 +40,8 @@ __global__ void rasterize_forward(
     int* __restrict__ final_index,
     float3* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
-    const float3& __restrict__ background
+    const float3& __restrict__ background,
+    const float background_depth
 );
 
 // compute output color image from binned and sorted gaussians
@@ -59,7 +60,8 @@ __global__ void nd_rasterize_forward(
     int* __restrict__ final_index,
     float* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
-    const float* __restrict__ background
+    const float* __restrict__ background,
+    const float background_depth
 );
 
 // device helper to approximate projected 2d cov from 3d mean and cov
@@ -110,7 +112,8 @@ __global__ void rasterize_forward(
     int* __restrict__ final_index,
     float3* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
-    const float3& __restrict__ background
+    const float3& __restrict__ background,
+    const float background_depth
 );
 
 __global__ void nd_rasterize_forward(
@@ -128,5 +131,6 @@ __global__ void nd_rasterize_forward(
     int* __restrict__ final_index,
     float* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
-    const float* __restrict__ background
+    const float* __restrict__ background,
+    const float background_depth
 );

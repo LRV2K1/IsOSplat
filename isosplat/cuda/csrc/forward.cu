@@ -188,7 +188,8 @@ __global__ void nd_rasterize_forward(
     int* __restrict__ final_index,
     float* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
-    const float* __restrict__ background
+    const float* __restrict__ background,
+    const float background_depth
 ) {
     auto block = cg::this_thread_block();
     int32_t tile_id =
@@ -299,7 +300,8 @@ __global__ void nd_rasterize_forward(
         for (int c = 0; c < channels; ++c) {
             out_img[pix_id * channels + c] = __half2float(pix_out[c]) + T * background[c];
         }
-        out_depth[pix_id] = pix_depth;   //new, todo
+        //out_depth[pix_id] = (1.e-4)/(pix_depth * 1.e-4 + T);   //new, todo
+        out_depth[pix_id] = pix_depth + T * background_depth;
     }
 }
 
@@ -317,7 +319,8 @@ __global__ void rasterize_forward(
     int* __restrict__ final_index,
     float3* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
-    const float3& __restrict__ background
+    const float3& __restrict__ background,
+    const float background_depth
 ) {
     // each thread draws one pixel, but also timeshares caching gaussians in a
     // shared tile
@@ -429,7 +432,8 @@ __global__ void rasterize_forward(
         final_color.y = pix_out.y + T * background.y;
         final_color.z = pix_out.z + T * background.z;
         out_img[pix_id] = final_color;
-        out_depth[pix_id] = pix_depth;   //new, todo
+        //out_depth[pix_id] = (1.e-4)/(pix_depth * 1.e-4 + T);   //new, todo
+        out_depth[pix_id] = pix_depth + T * background_depth;
     }
 }
 

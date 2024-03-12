@@ -348,7 +348,8 @@ rasterize_forward_tensor(
     const torch::Tensor &conics,
     const torch::Tensor &colors,
     const torch::Tensor &opacities,
-    const torch::Tensor &background
+    const torch::Tensor &background,
+    const float &background_depth
 ) {
     CHECK_INPUT(gaussian_ids_sorted);
     CHECK_INPUT(tile_bins);
@@ -405,7 +406,8 @@ rasterize_forward_tensor(
         final_idx.contiguous().data_ptr<int>(),
         (float3 *)out_img.contiguous().data_ptr<float>(),
         out_depth.contiguous().data_ptr<float>(), //new, todo
-        *(float3 *)background.contiguous().data_ptr<float>()
+        *(float3 *)background.contiguous().data_ptr<float>(),
+        background_depth
     );
 
     return std::make_tuple(out_img, final_Ts, out_depth, final_idx);
@@ -424,7 +426,8 @@ nd_rasterize_forward_tensor(
     const torch::Tensor &conics,
     const torch::Tensor &colors,
     const torch::Tensor &opacities,
-    const torch::Tensor &background
+    const torch::Tensor &background,
+    const float &background_depth
 ) {
     CHECK_INPUT(gaussian_ids_sorted);
     CHECK_INPUT(tile_bins);
@@ -488,7 +491,8 @@ nd_rasterize_forward_tensor(
         final_idx.contiguous().data_ptr<int>(),
         out_img.contiguous().data_ptr<float>(),
         out_depth.contiguous().data_ptr<float>(), //new, todo
-        background.contiguous().data_ptr<float>()
+        background.contiguous().data_ptr<float>(),
+        background_depth
     );
 
     return std::make_tuple(out_img, final_Ts, out_depth, final_idx);
