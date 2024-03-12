@@ -30,6 +30,7 @@ class RendererThread:
         self.anglv = 0.0
         self.dis = 8.0
         self.size = 1.0
+        self.depth = 20.0
 
         self.x = 0.0
         self.y = 0.0
@@ -64,19 +65,23 @@ class RendererThread:
     def set_size(self, size: float):
         self.size = size
 
+    def set_depth(self, depth: float):
+        self.depth = depth
+
     def _update_camera(self):
         self.camera.orbit(self.x, self.y, self.z, self.dis, self.anglh, self.anglv)
 
     def render(self, width: int, height: int) -> tuple[Image.Image, Image.Image]:
-        out_img, out_depth, _, _ = self.renderer.render(self.camera, self.size, self.background)
+        out_img, out_depth, _, _ = self.renderer.render(self.camera, self.size, self.depth, self.background)
         img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
 
         norm_depth = out_depth - out_depth.min()
         m = norm_depth.max()
         if m > 0.0:
             norm_depth /= norm_depth.max()
-        norm_depth *= -1.0
-        norm_depth += 1.0
+        else:
+            norm_depth = norm_depth + 1.0
+
         depth = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
         return img.resize((width, height)), depth.resize((width, height))
 
@@ -108,6 +113,15 @@ class Viewer:
 
         self.label = Label(self.root, text=f"{self.slider.get():.2f}")
         self.label.place(x=120, y=15)
+
+        self.depth_slider = Scale(self.root, from_=0, to=100, orient=HORIZONTAL)
+        self.depth_slider.bind("<Enter>", self._enter_no_drag)
+        self.depth_slider.bind("<Leave>", self._leave_no_drag)
+        self.depth_slider.set(20.0)
+        self.depth_slider.place(x=10, y=50)
+
+        self.depth_label = Label(self.root, text=f"{self.depth_slider.get():.2f}")
+        self.depth_label.place(x=120, y=55)
 
         self.background_toggle = Button(self.root, text="Background", command=self._toggle_background)
         self.background_toggle.place(relx=1, x=-10, y=10, anchor=NE)
@@ -147,9 +161,12 @@ class Viewer:
 
     def render_loop(self):
         size = self.slider.get()
+        depth = self.depth_slider.get()
         self.label.configure(text=f"{size:.2f}")
+        self.depth_label.configure(text=f"{depth:.2f}")
 
         self.renderer.set_size(size)
+        self.renderer.set_depth(depth)
         img, depth = self.renderer.render(self.width, self.height)
         if self.show_depth:
             final_img = ImageTk.PhotoImage(depth)

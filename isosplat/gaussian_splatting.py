@@ -255,7 +255,7 @@ class GaussianSplatting:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
         return spherical_harmonics(degrees_to_use, view_dirs, sh_coeffs)
 
-    def rasterize(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
+    def rasterize(self, camera: Camera, size: float = 1.0, background_depth: float = 20.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
         view_mat, project_mat = camera.get_view_and_project_matrix()
         focalx, focaly = camera.get_focal()
         width, height = camera.get_size()
@@ -298,7 +298,7 @@ class GaussianSplatting:
             width,
             BLOCK_WIDTH,
             color,
-            20.0,
+            background_depth,
             True
         )
 
@@ -306,9 +306,9 @@ class GaussianSplatting:
         t1 = time.time() - start
         return out_img, out_alpha, out_depth, t0, t1
 
-    def render(self, camera: Camera, size: float = 1.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
+    def render(self, camera: Camera, size: float = 1.0, background_depth: float = 20.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
         with torch.no_grad():
-            out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, color)
+            out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, background_depth, color)
             return out_img, out_depth, t0, t1
 
     def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
@@ -428,7 +428,8 @@ class GaussianSplatting:
                     m = norm_depth.max()
                     if m > 0.0:
                         norm_depth /= norm_depth.max()
-                    # norm_depth *= -1.0
-                    # norm_depth += 1.0
+                    else:
+                        norm_depth = norm_depth + 1.0
+
                     depth_image = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
                     depth_image.save(f"{save_path}/{name}_depth.png")
