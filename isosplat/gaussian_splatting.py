@@ -187,7 +187,7 @@ class GaussianSplatting:
         return itr % 100 == 0 and itr > 0
 
     def _is_reset_iteration(self, itr: int, iterations: int) -> bool:
-        return itr % 3000 == 0 and iterations - itr > 1000 and itr > 0
+        return itr % 1000 == 0 and iterations - itr > 1000 and itr > 0
 
     def _add_sh_band(self, itr: int) -> bool:
         return itr % 1000 == 0 and self.sh_degree < 4 and itr > 0
@@ -410,13 +410,16 @@ class GaussianSplatting:
             for name in data_list:
                 gt_view, camera, add_data = data[name]
                 gt_alpha = None
+                bg_depth = 20.0
                 if "alpha" in add_data:
                     gt_alpha = add_data["alpha"]
                 gt_depth = None
                 if "depth" in add_data:
                     gt_depth = add_data["depth"]
+                if "bg_depth" in add_data:
+                    bg_depth = add_data["bg_depth"]
 
-                nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera)
+                nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera, background_depth=bg_depth)
                 loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
 
                 print(f"Image: {name}, Loss:{loss.item()}")
