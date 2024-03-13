@@ -262,5 +262,6 @@ class _RasterizeGaussians(Function):
             None,  # img_width
             None,  # block_width
             None,  # background
+            None,
             None,  # return_alpha
         )
