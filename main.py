@@ -68,8 +68,9 @@ def main(
                     camera = create_camera_from_sfm_data(camera_data, image, device)
                     gt_image, gt_alpha = image_loader.image_path_to_tensor(img_path / f"{name}.png", device)
                     
-                    data[name] = gt_image, camera, {}
-                    data_list.append(name)
+                    #data[name] = gt_image, camera, {}
+                    #data_list.append(name)
+                    add_data = {}
 
                     if not no_depth:
                         dm = load_depth_map(img_path / "depth_npy" / f"{name}_pred.npy")
@@ -77,9 +78,12 @@ def main(
                         dmn = DepthMapNormalizer()
                         depth_map = dmn.normalize_depth_map(name, dm,
                                             pid, point_cloud, image, camera, device)
-                        add_data = {}
+                        #add_data = {}
                         add_data["depth"] = depth_map
                         add_data["bg_depth"] = torch.max(depth_map).item() + 10
+                    
+                    data[name] = gt_image, camera, add_data
+                    data_list.append(name)
     else:
         gt_image = torch.ones((height, width, 3), device=device) * 1.0
         # make top left and bottom right red, blue
