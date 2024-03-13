@@ -515,10 +515,12 @@ std::
         const torch::Tensor &gaussians_ids_sorted,
         const torch::Tensor &tile_bins,
         const torch::Tensor &xys,
+        const torch::Tensor &depths,    //new, todo
         const torch::Tensor &conics,
         const torch::Tensor &colors,
         const torch::Tensor &opacities,
         const torch::Tensor &background,
+        const float &background_depth,  //new, todo
         const torch::Tensor &final_Ts,
         const torch::Tensor &final_idx,
         const torch::Tensor &v_output, // dL_dout_color
@@ -567,10 +569,12 @@ std::
         gaussians_ids_sorted.contiguous().data_ptr<int>(),
         (int2 *)tile_bins.contiguous().data_ptr<int>(),
         (float2 *)xys.contiguous().data_ptr<float>(),
+        depths.contiguous().data_ptr<float>(),
         (float3 *)conics.contiguous().data_ptr<float>(),
         colors.contiguous().data_ptr<float>(),
         opacities.contiguous().data_ptr<float>(),
         background.contiguous().data_ptr<float>(),
+        background_depth,
         final_Ts.contiguous().data_ptr<float>(),
         final_idx.contiguous().data_ptr<int>(),
         v_output.contiguous().data_ptr<float>(),
@@ -601,10 +605,12 @@ std::
         const torch::Tensor &gaussians_ids_sorted,
         const torch::Tensor &tile_bins,
         const torch::Tensor &xys,
+        const torch::Tensor &depths, //new, todo
         const torch::Tensor &conics,
         const torch::Tensor &colors,
         const torch::Tensor &opacities,
         const torch::Tensor &background,
+        const float &background_depth, //new, todo
         const torch::Tensor &final_Ts,
         const torch::Tensor &final_idx,
         const torch::Tensor &v_output, // dL_dout_color
@@ -646,10 +652,12 @@ std::
         gaussians_ids_sorted.contiguous().data_ptr<int>(),
         (int2 *)tile_bins.contiguous().data_ptr<int>(),
         (float2 *)xys.contiguous().data_ptr<float>(),
+        depths.contiguous().data_ptr<float>(),
         (float3 *)conics.contiguous().data_ptr<float>(),
         (float3 *)colors.contiguous().data_ptr<float>(),
         opacities.contiguous().data_ptr<float>(),
         *(float3 *)background.contiguous().data_ptr<float>(),
+        background_depth,
         final_Ts.contiguous().data_ptr<float>(),
         final_idx.contiguous().data_ptr<int>(),
         (float3 *)v_output.contiguous().data_ptr<float>(),

@@ -189,7 +189,7 @@ __global__ void nd_rasterize_forward(
     float* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
     const float* __restrict__ background,
-    const float background_depth
+    const float background_depth    //new, todo
 ) {
     auto block = cg::this_thread_block();
     int32_t tile_id =
@@ -320,7 +320,7 @@ __global__ void rasterize_forward(
     float3* __restrict__ out_img,
     float* __restrict__ out_depth,          //new, todo
     const float3& __restrict__ background,
-    const float background_depth
+    const float background_depth //new, todo
 ) {
     // each thread draws one pixel, but also timeshares caching gaussians in a
     // shared tile

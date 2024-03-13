@@ -7,12 +7,14 @@ import tyro
 import torch
 from torch import Tensor
 
-from isosplat.camera_constructor import image_path_to_tensor, create_camera_from_cam_file, create_camera_from_sfm_data
 from isosplat.camera import Camera
 from isosplat.gaussian_splatting import GaussianSplatting
 
-import preprocess.colmap_loader as prep
-
+import preprocess.colmap_loader as colmap_loader
+import preprocess.image_loader as image_loader
+from preprocess.camera_constructor import create_camera_from_cam_file, create_camera_from_sfm_data
+from preprocess.marigold_loader import load_depth_map
+from preprocess.depth_map_normilizer import DepthMapNormalizer
 
 class Initialize(Enum):
     Random = 0
@@ -49,7 +51,7 @@ def main(
                     filename = os.fsdecode(file)
                     if filename.endswith(".cam"):
                         name = filename.split('.')[0]
-                        gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png", device)
+                        gt_image, gt_alpha = image_loader.image_path_to_tensor(img_path / f"{name}.png", device)
                         width, height = gt_image.shape[0], gt_image.shape[1]
                         camera = create_camera_from_cam_file(width, height, img_path / f"{name}.cam", device)
                         
@@ -57,17 +59,27 @@ def main(
                         data_list.append(name)
             case CamModel.SFM:
                 if initialize == Initialize.SFM:
-                    point_cloud = prep.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
-                images = prep.read_extrinsics_binary(img_path / "sfm" / "0" / "images.bin")
-                cameras = prep.read_intrinsics_binary(img_path / "sfm" / "0" / "cameras.bin")
+                    pid, point_cloud = colmap_loader.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
+                images = colmap_loader.read_extrinsics_binary(img_path / "sfm" / "0" / "images.bin")
+                cameras = colmap_loader.read_intrinsics_binary(img_path / "sfm" / "0" / "cameras.bin")
                 for image in images.values():
                     name = image.name.split('.')[0]
                     camera_data = cameras[image.camera_id]
                     camera = create_camera_from_sfm_data(camera_data, image, device)
-                    gt_image, gt_alpha = image_path_to_tensor(img_path / f"{name}.png", device)
+                    gt_image, gt_alpha = image_loader.image_path_to_tensor(img_path / f"{name}.png", device)
                     
                     data[name] = gt_image, camera, {}
                     data_list.append(name)
+
+                    if not no_depth:
+                        dm = load_depth_map(img_path / "depth_npy" / f"{name}_pred.npy")
+                        import numpy as np
+                        dmn = DepthMapNormalizer()
+                        depth_map = dmn.normalize_depth_map(name, dm,
+                                            pid, point_cloud, image, camera, device)
+                        add_data = {}
+                        add_data["depth"] = depth_map
+                        add_data["bg_depth"] = torch.max(depth_map).item() + 10
     else:
         gt_image = torch.ones((height, width, 3), device=device) * 1.0
         # make top left and bottom right red, blue
@@ -81,6 +93,7 @@ def main(
         if not no_depth:
             gt_depth = (torch.ones((height, width), device=device) * 7.0)
             add_data["depth"] = gt_depth
+            add_data["bg_depth"] = 15
 
         camera = Camera(width, height, width/2, height/2, width/2, height/2, device)
         data_list = ["test"]

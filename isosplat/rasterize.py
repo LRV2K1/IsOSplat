@@ -178,6 +178,7 @@ class _RasterizeGaussians(Function):
         ctx.img_height = img_height
         ctx.num_intersects = num_intersects
         ctx.block_width = block_width
+        ctx.background_depth = background_depth
         ctx.save_for_backward(
             gaussian_ids_sorted,
             tile_bins,
@@ -188,6 +189,7 @@ class _RasterizeGaussians(Function):
             background,
             final_Ts,
             final_idx,
+            depths,
         )
 
         if return_alpha:
@@ -217,6 +219,7 @@ class _RasterizeGaussians(Function):
             background,
             final_Ts,
             final_idx,
+            depths,
         ) = ctx.saved_tensors
 
         if num_intersects < 1:
@@ -237,10 +240,12 @@ class _RasterizeGaussians(Function):
                 gaussian_ids_sorted,
                 tile_bins,
                 xys,
+                depths,
                 conics,
                 colors,
                 opacity,
                 background,
+                ctx.background_depth,
                 final_Ts,
                 final_idx,
                 v_out_img,

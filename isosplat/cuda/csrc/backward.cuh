@@ -36,10 +36,12 @@ __global__ void nd_rasterize_backward_kernel(
     const int32_t* __restrict__ gaussians_ids_sorted,
     const int2* __restrict__ tile_bins,
     const float2* __restrict__ xys,
+    const float* __restrict__ depths,       //new, todo
     const float3* __restrict__ conics,
     const float* __restrict__ rgbs,
     const float* __restrict__ opacities,
     const float* __restrict__ background,
+    const float background_depth, //new, todo
     const float* __restrict__ final_Ts,
     const int* __restrict__ final_index,
     const float* __restrict__ v_output,
@@ -58,10 +60,12 @@ __global__ void rasterize_backward_kernel(
     const int32_t* __restrict__ gaussian_ids_sorted,
     const int2* __restrict__ tile_bins,
     const float2* __restrict__ xys,
+    const float* __restrict__ depths,       //new, todo
     const float3* __restrict__ conics,
     const float3* __restrict__ rgbs,
     const float* __restrict__ opacities,
     const float3& __restrict__ background,
+    const float background_depth, //new, todo
     const float* __restrict__ final_Ts,
     const int* __restrict__ final_index,
     const float3* __restrict__ v_output,

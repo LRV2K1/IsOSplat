@@ -162,10 +162,12 @@ std::
         const torch::Tensor &gaussians_ids_sorted,
         const torch::Tensor &tile_bins,
         const torch::Tensor &xys,
+        const torch::Tensor &depths, //new, todo
         const torch::Tensor &conics,
         const torch::Tensor &colors,
         const torch::Tensor &opacities,
         const torch::Tensor &background,
+        const float &background_depth, //new, todo
         const torch::Tensor &final_Ts,
         const torch::Tensor &final_idx,
         const torch::Tensor &v_output, // dL_dout_color
@@ -188,10 +190,12 @@ std::
         const torch::Tensor &gaussians_ids_sorted,
         const torch::Tensor &tile_bins,
         const torch::Tensor &xys,
+        const torch::Tensor &depths, //new, todo
         const torch::Tensor &conics,
         const torch::Tensor &colors,
         const torch::Tensor &opacities,
         const torch::Tensor &background,
+        const float &background_depth, //new, todo
         const torch::Tensor &final_Ts,
         const torch::Tensor &final_idx,
         const torch::Tensor &v_output, // dL_dout_color
