@@ -339,7 +339,7 @@ class GaussianSplatting:
         # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         padded_grads = torch.zeros(self.num_points - grads.shape[0], grads.shape[1], device=self.device)
         padded_grads = torch.cat((grads, padded_grads))
-        mask = torch.where(torch.norm(padded_grads, dim=-1)  > grad_threshold, True, False)
+        mask = torch.where(torch.norm(padded_grads, dim=-1)  >= grad_threshold, True, False)
         mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values > size_threshold)
 
         positional_gradient = _ProjectGaussians.getPositionalGradient()
@@ -371,7 +371,7 @@ class GaussianSplatting:
     def _clone(self, grads: Tensor,  grad_threshold: float, size_threshold: float, extend: float):
         # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         # mask = torch.where(torch.norm(view_space_gradients, dim=-1) > grad_threshold, True, False)
-        mask = torch.where(torch.norm(grads, dim=-1) > grad_threshold, True, False)
+        mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
         mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values <= size_threshold)
 
         positional_gradient = _ProjectGaussians.getPositionalGradient()[mask]
@@ -397,7 +397,7 @@ class GaussianSplatting:
         view_gradients = torch.cat((view_space_gradients, view_depth_gradients), 1)
 
         mask = torch.where(torch.norm(view_gradients, dim=-1) > 0, True, False)
-        self.acc_grad[mask] += torch.norm(view_gradients[mask,:2], dim=-1, keepdim=True)
+        self.acc_grad[mask] += torch.norm(view_gradients[mask,:3], dim=-1, keepdim=True)
         self.denom[mask] += 1
 
     def _reset_opacity(self):
@@ -444,6 +444,16 @@ class GaussianSplatting:
                         norm_depth /= m
                     else:
                         norm_depth = norm_depth + 1.0
+
+                    # print("Depths:")
+                    # print(f"Min: {nv_depth.min().item()}")
+                    # print(f"Max: {nv_depth.max().item()}")
+                    # print(f"x_min: {self.means[:,0].min().item()}")
+                    # print(f"x_max: {self.means[:,0].max().item()}")
+                    # print(f"y_min: {self.means[:,1].min().item()}")
+                    # print(f"y_max: {self.means[:,1].max().item()}")
+                    # print(f"z_min: {self.means[:,2].min().item()}")
+                    # print(f"z_max: {self.means[:,2].max().item()}")
 
                     depth_image = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
                     depth_image.save(f"{save_path}/{name}_depth.png")

@@ -1,5 +1,7 @@
+from pathlib import Path
 from typing import NewType
 import numpy as np
+import json
 
 import torch
 from torch import Tensor, optim
@@ -13,7 +15,7 @@ PointCloud = NewType('PointCloud', tuple[np.ndarray, np.ndarray, np.ndarray])
 class DepthMapNormalizer:
     def normalize_depth_map(self, name: str, depth_map: np.ndarray, point_cloud_id: dict[int, int], point_cloud: PointCloud, image: Image, camera: Camera, device: torch.device) -> Tensor:
         print(f"Normalizing depth map {name}")
-        self.depth_map = torch.tensor(np.float32(depth_map), device=device)
+        depth_map = torch.tensor(np.float32(depth_map), device=device)
         
         xzys, _, errors = point_cloud
 
@@ -43,7 +45,7 @@ class DepthMapNormalizer:
         dense_depths = torch.tensor(dense_list, device=device)
 
         s, t = self._argmin(sparse_depths, dense_depths, device)
-        return self.depth_map * s + t
+        return s * depth_map + t
 
     def _argmin(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
         sparse_depths.requires_grad = False
@@ -70,6 +72,16 @@ class DepthMapNormalizer:
 
             iter += 1
         return s.item(), t.item()
+    
+    def normalize_depth_map_file(self, name: str, depth_map: np.ndarray, depth_file_path: Path, device: torch.device) -> Tensor:
+        print(f"Normalizing depth map {name}")
+        depth_map = torch.tensor(np.float32(depth_map), device=device)
+
+        scale_offsets = json.load(depth_file_path)
+        s, t = scale_offsets[name]
+
+        return s * depth_map + t
+
 
 
 def _get_depths(view_matrix: Tensor, means: Tensor) -> Tensor:
