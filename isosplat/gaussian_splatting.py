@@ -161,7 +161,7 @@ class GaussianSplatting:
             self.sh_degree = 0
         print(f"Initialized {self.num_points} gaussians")
 
-    def init_optimizer(self, lr: float, l_ssim: float = 0.2, l_depth: float = 0.5):
+    def init_optimizer(self, lr: float, l_ssim: float = 0.2, l_depth: float = 0.1):
         optimize_tensors = {
             'sh_coeffs': self.sh_coeffs,
             'means': self.means,
@@ -366,7 +366,7 @@ class GaussianSplatting:
 
         self.optimizer.prune_optimizer(~mask)
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
-        self.splits += new_opacities.shape[0]/2
+        self.splits += int(new_opacities.shape[0]/2)
 
     def _clone(self, grads: Tensor,  grad_threshold: float, size_threshold: float, extend: float):
         # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()

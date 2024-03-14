@@ -4,7 +4,7 @@ from torch import Tensor, optim, nn
 
 
 class Optimizer:
-    def __init__(self, l_ssim: float = 0.2, l_depth: float = 0.5):
+    def __init__(self, l_ssim: float = 0.2, l_depth: float = 0.1):
         self.optimizer: optim.Adam
         
         self.l_ssim = l_ssim

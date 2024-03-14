@@ -20,7 +20,7 @@ def main(
         depth_model: DepthModel = DepthModel.NoDepth,
         no_alpha: bool = True,
         l_ssim: float = 0.2,
-        l_depth: float = 0.5
+        l_depth: float = 0.1
 ) -> None:
     device = torch.device("cuda:0")
 

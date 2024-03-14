@@ -89,11 +89,13 @@ class DepthMapNormalizer:
         print(f"Normalizing depth map {name}")
         depth_map = torch.tensor(np.float32(depth_map), device=device)
 
-        scale_offsets = json.load(depth_file_path)
+        with open(depth_file_path) as f:
+            data = f.read()
+
+        scale_offsets = json.loads(data)
         s, t = scale_offsets[name]
 
         return s * depth_map + t
-
 
 
 def _get_depths(view_matrix: Tensor, means: Tensor) -> Tensor:
