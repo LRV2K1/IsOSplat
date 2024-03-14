@@ -47,7 +47,7 @@ class DepthMapNormalizer:
         s, t = self._argmin(sparse_depths, dense_depths, device)
         return s * depth_map + t
 
-    def _argmin(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
+    def _argmin_old(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
         sparse_depths.requires_grad = False
         dense_depths.requires_grad = False
 
@@ -73,6 +73,18 @@ class DepthMapNormalizer:
             iter += 1
         return s.item(), t.item()
     
+    def _argmin(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
+        sparse_depths = sparse_depths[:,None]
+        dense_depths = dense_depths[:,None]
+        dense_depths = torch.cat((dense_depths, torch.ones_like(dense_depths, device=device)), 1)
+        dense_depths_T = torch.transpose(dense_depths, 0, 1)
+
+        dense_depths_p = torch.linalg.inv(torch.matmul(dense_depths_T, dense_depths))
+        dense_depths_p = torch.matmul(dense_depths_p, dense_depths_T)
+        x = torch.matmul(dense_depths_p, sparse_depths)
+
+        return x[0,0].item(), x[1,0].item()
+
     def normalize_depth_map_file(self, name: str, depth_map: np.ndarray, depth_file_path: Path, device: torch.device) -> Tensor:
         print(f"Normalizing depth map {name}")
         depth_map = torch.tensor(np.float32(depth_map), device=device)
