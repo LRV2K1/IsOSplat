@@ -37,7 +37,9 @@ def main(
         splats: int = 100000,
         initialize: Initialize = Initialize.Random,
         cam_model: CamModel = CamModel.CamFile,
-        no_depth: bool = False
+        no_depth: bool = False,
+        l_ssim: float = 0.2,
+        l_depth: float = 0.5
 ) -> None:
     device = torch.device("cuda:0")
     data_list = []
@@ -58,7 +60,7 @@ def main(
                         data[name] = gt_image, camera, {}
                         data_list.append(name)
             case CamModel.SFM:
-                if initialize == Initialize.SFM:
+                if initialize == Initialize.SFM or not no_depth:
                     pid, point_cloud = colmap_loader.read_points3D_binary(img_path / "sfm" / "0" / "points3D.bin")
                 images = colmap_loader.read_extrinsics_binary(img_path / "sfm" / "0" / "images.bin")
                 cameras = colmap_loader.read_intrinsics_binary(img_path / "sfm" / "0" / "cameras.bin")
@@ -103,10 +105,13 @@ def main(
         data_list = ["test"]
         data = {"test": (gt_image, camera, add_data)}
 
+    if initialize != Initialize.SFM:
+        point_cloud = None
+
     trainer = GaussianSplatting(device)
 
     trainer.init_gaussians(splats, load_path, point_cloud)
-    trainer.init_optimizer(lr)
+    trainer.init_optimizer(lr, l_ssim, l_depth)
     if iterations > 0 and len(data_list) > 0:
         trainer.train(
             data_list=data_list,

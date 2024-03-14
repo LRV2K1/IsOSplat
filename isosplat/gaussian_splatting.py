@@ -49,6 +49,9 @@ class GaussianSplatting:
         self.clones = 0
         self.culls = 0
 
+        self.l_ssim = 0.2
+        self.l_depth = 1.0
+
     def init_axis(self):
         self.num_points = 7
         self.means = torch.tensor(
@@ -158,7 +161,7 @@ class GaussianSplatting:
             self.sh_degree = 0
         print(f"Initialized {self.num_points} gaussians")
 
-    def init_optimizer(self, lr: float):
+    def init_optimizer(self, lr: float, l_ssim: float = 0.2, l_depth: float = 0.5):
         optimize_tensors = {
             'sh_coeffs': self.sh_coeffs,
             'means': self.means,
@@ -167,7 +170,7 @@ class GaussianSplatting:
             'quats': self.quats
         }
 
-        self.optimizer = Optimizer()
+        self.optimizer = Optimizer(l_ssim, l_depth)
         self._update_tensors(self.optimizer.load_tensor_dict(optimize_tensors, lr))
 
     def _update_tensors(self, new_tensors: dict[str, Tensor]):
@@ -187,7 +190,7 @@ class GaussianSplatting:
         return itr % 100 == 0 and itr > 0
 
     def _is_reset_iteration(self, itr: int, iterations: int) -> bool:
-        return itr % 1000 == 0 and iterations - itr > 1000 and itr > 0
+        return itr % 3000 == 0 and iterations - itr >= 1000 and itr > 0
 
     def _add_sh_band(self, itr: int) -> bool:
         return itr % 1000 == 0 and self.sh_degree < 4 and itr > 0
@@ -208,17 +211,17 @@ class GaussianSplatting:
             for name in data_list:
                 gt_view, camera, add_data = data[name]
                 gt_alpha = None
-                bg_depth = 20.0
                 if "alpha" in add_data:
                     gt_alpha = add_data["alpha"]
                 gt_depth = None
                 if "depth" in add_data:
                     gt_depth = add_data["depth"]
+                bg_depth = 20.0
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
                 
                 nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera, background_depth=bg_depth)
-                loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
+                loss, _ = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
                 t2 = self.optimizer.back_propagate_loss(loss)
 
                 times[0] += t0
@@ -390,19 +393,23 @@ class GaussianSplatting:
 
     def add_densification_states(self):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
-        mask = torch.where(torch.norm(view_space_gradients, dim=-1) > 0, True, False)
-        self.acc_grad[mask] += torch.norm(view_space_gradients[mask,:2], dim=-1, keepdim=True)
+        view_depth_gradients = _RasterizeGaussians.getViewDepthGradient()[:,None]
+        view_gradients = torch.cat((view_space_gradients, view_depth_gradients), 1)
+
+        mask = torch.where(torch.norm(view_gradients, dim=-1) > 0, True, False)
+        self.acc_grad[mask] += torch.norm(view_gradients[mask,:2], dim=-1, keepdim=True)
         self.denom[mask] += 1
 
     def _reset_opacity(self):
         new_opacities = torch.min(self.opacities, utils.inverse_sigmoid_tensor(torch.ones_like(self.opacities) * 0.005))
         self._update_tensors(self.optimizer.replace_optimizer_tensor(new_opacities, "opacities"))
 
-    def loss(self, gt_view: Tensor, nv_view: Tensor, gt_alpha: Tensor = None, nv_alpha: Tensor = None, gt_depth: Tensor = None, nv_depth: Tensor = None) -> Tensor:
-        loss = 0.8 * loss_functions.l1_loss(nv_view, gt_view) + (1.0 - loss_functions.ssim(nv_view, gt_view))
+    def loss(self, gt_view: Tensor, nv_view: Tensor, gt_alpha: Tensor = None, nv_alpha: Tensor = None, gt_depth: Tensor = None, nv_depth: Tensor = None) -> tuple[Tensor, float]:
+        loss = (1.0 - self.optimizer.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) + self.optimizer.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
+        img_loss = loss.item()
         if gt_depth is not None and nv_depth is not None:
-            loss += loss_functions.l1_loss(nv_depth, gt_depth)
-        return loss
+            loss += self.optimizer.l_depth * loss_functions.l1_loss(nv_depth, gt_depth)
+        return loss, img_loss
 
     def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], save_path: Optional[Path] = None):
 
@@ -410,19 +417,20 @@ class GaussianSplatting:
             for name in data_list:
                 gt_view, camera, add_data = data[name]
                 gt_alpha = None
-                bg_depth = 20.0
                 if "alpha" in add_data:
                     gt_alpha = add_data["alpha"]
                 gt_depth = None
                 if "depth" in add_data:
                     gt_depth = add_data["depth"]
+                bg_depth = 20.0
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
 
                 nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera, background_depth=bg_depth)
-                loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
+                loss, img_loss = self.loss(gt_view, nv_view, gt_alpha, nv_alpha, gt_depth, nv_depth)
 
                 print(f"Image: {name}, Loss:{loss.item()}")
+                print(f"Image: {name}, Img_Loss:{img_loss}")
                 if save_path:
                     if not os.path.exists(save_path):
                         os.makedirs(save_path)
@@ -433,7 +441,7 @@ class GaussianSplatting:
                     norm_depth = nv_depth - nv_depth.min()
                     m = norm_depth.max()
                     if m > 0.0:
-                        norm_depth /= norm_depth.max()
+                        norm_depth /= m
                     else:
                         norm_depth = norm_depth + 1.0
 

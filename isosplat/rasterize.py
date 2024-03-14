@@ -92,10 +92,15 @@ def rasterize_gaussians(
 class _RasterizeGaussians(Function):
     """Rasterizes 2D gaussians"""
     last_v_xy: Tensor
+    last_v_depth: Tensor
 
     @staticmethod
     def getViewSpaceGradient() -> Tensor:
         return _RasterizeGaussians.last_v_xy
+    
+    @staticmethod
+    def getViewDepthGradient() -> Tensor:
+        return _RasterizeGaussians.last_v_depth
 
     @staticmethod
     def forward(
@@ -254,6 +259,7 @@ class _RasterizeGaussians(Function):
             )
 
         _RasterizeGaussians.last_v_xy = v_xy
+        _RasterizeGaussians.last_v_depth = v_depth
 
         return (
             v_xy,  # xys

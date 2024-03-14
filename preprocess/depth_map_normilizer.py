@@ -45,7 +45,7 @@ class DepthMapNormalizer:
         s, t = self._argmin(sparse_depths, dense_depths, device)
         return self.depth_map * s + t
 
-    def _argmin(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[Tensor, Tensor]:
+    def _argmin(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
         sparse_depths.requires_grad = False
         dense_depths.requires_grad = False
 
@@ -69,7 +69,7 @@ class DepthMapNormalizer:
             current_loss = loss.item()
 
             iter += 1
-        return s, t
+        return s.item(), t.item()
 
 
 def _get_depths(view_matrix: Tensor, means: Tensor) -> Tensor:
