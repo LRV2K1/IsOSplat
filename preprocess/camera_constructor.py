@@ -36,26 +36,32 @@ def create_camera_from_sfm_data(cam_data: prep.Camera, img_data: prep.Image, dev
         return None
     
     R = np.transpose(img_data.qvec2rotmat())
+    R = R.transpose()
+    F = np.zeros((3, 3))
+    F[0, 0] = 1
+    F[1, 1] = -1
+    F[2, 2] = -1
+    R = np.matmul(R, F)
     T = np.array(img_data.tvec)
    
-    Rt = np.zeros((4, 4))
-    Rt[:3, :3] = R.transpose()
-    Rt[:3, 3] = T
-    Rt[3, 3] = 1.0
-    C2W = np.linalg.inv(Rt)
+    tr = np.zeros((4, 4))
+    tr[:3, :3] = R
+    tr[:3, 3] = T
+    tr[3, 3] = 1.0
+    C2W = np.linalg.inv(tr)
     cam_center = C2W[:3, 3]
 
     # rotate camera by 180 degrees
-    rot = np.zeros((3, 3))
-    rot[0,0] = -1
-    rot[1,1] = -1
-    rot[2,2] = 1
-    nr = np.matmul(rot, R.transpose())
-    Rtt = np.zeros((4, 4))
-    Rtt[:3, :3] = nr
-    Rtt[3, 3] = 1.0
+    K = np.zeros((3, 3))
+    K[0, 0] = -1
+    K[1, 1] = -1
+    K[2, 2] = 1
+    nr = np.matmul(K, R)
+    rot = np.zeros((4, 4))
+    rot[:3, :3] = nr
+    rot[3, 3] = 1.0
 
-    view = torch.tensor(np.float32(Rtt), device=device)
+    view = torch.tensor(np.float32(rot), device=device)
     camera = Camera(cam_data.width, cam_data.height, float(cam_data.params[0]), float(cam_data.params[0]), float(cam_data.params[1]), float(cam_data.params[2]), device)
     camera.set_position(float(cam_center[0]), float(cam_center[1]), float(cam_center[2]))
     camera.set_rotation(view)

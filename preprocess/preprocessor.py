@@ -77,6 +77,7 @@ class PreProcessor:
         sfm_cameras = None
         if initialize == Initialize.SFM or cam_model == CamModel.SFM:
             pid, point_cloud = read_points3D_binary(self.sfm_path / "points3D.bin")
+            point_cloud = self._flip_point_cloud(point_cloud)
             sfm_images = read_extrinsics_binary(self.sfm_path / "images.bin")
             sfm_cameras = read_intrinsics_binary(self.sfm_path / "cameras.bin")
 
@@ -162,7 +163,7 @@ class PreProcessor:
         else:
             return data_list, data, point_cloud
         
-    def _dummy_data(self, device: torch.device, depth_model: DepthModel, no_alpha: bool) -> tuple[list[str], dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], PointCloud]:
+    def _dummy_data(self, device: torch.device, depth_model: DepthModel, no_alpha: bool) -> tuple[list[str], dict[str, tuple[Tensor, Camera, dict[str, any]]], None]:
         height = 256
         width = 256
         
@@ -188,3 +189,11 @@ class PreProcessor:
         data = {"test": (gt_image, camera, add_data)}
 
         return data_list, data, None
+
+    def _flip_point_cloud(self, point_cloud: PointCloud) -> PointCloud:
+        xyzs, rgbs, errors = point_cloud
+
+        xyzs[:, 1] = xyzs[:, 1] * -1.0
+        xyzs[:, 2] = xyzs[:, 2] * -1.0
+
+        return PointCloud((xyzs, rgbs, errors))
