@@ -15,12 +15,13 @@ import numpy as np
 
 
 class RendererThread:
-    def __init__(self, load_path: Path):
+    def __init__(self, load_path: Path, axis: bool = False):
         device = torch.device("cuda:0")
 
         self.renderer = GaussianSplatting(device)
         self.renderer.init_gaussians(0, load_path)
-        # self.renderer.init_axis()
+        if axis:
+            self.renderer.init_axis(True)
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
         # self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
@@ -87,7 +88,7 @@ class RendererThread:
 
 
 class Viewer:
-    def __init__(self, load_path: Path):
+    def __init__(self, load_path: Path, axis: bool= False):
         # self.width = 1200
         self.width = 800
         self.height = 800
@@ -131,7 +132,7 @@ class Viewer:
 
         self.prev_image: ImageTk.PhotoImage
 
-        self.renderer = RendererThread(load_path)
+        self.renderer = RendererThread(load_path, axis)
 
         self.dragging = False
         self.drag_space = True
@@ -220,9 +221,10 @@ class Viewer:
 
 
 def main(
-        load_path: Path
+        load_path: Path,
+        axis: bool = False
 ) -> None:
-    viewer = Viewer(load_path)
+    viewer = Viewer(load_path, axis)
     viewer.run()
 
 

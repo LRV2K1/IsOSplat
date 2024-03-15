@@ -52,9 +52,8 @@ class GaussianSplatting:
         self.l_ssim = 0.2
         self.l_depth = 1.0
 
-    def init_axis(self):
-        self.num_points = 7
-        self.means = torch.tensor(
+    def init_axis(self, add_axis: bool = False):
+        means = torch.tensor(
             [[0.0, 0.0, 0.0],
              [1.0, 0.0, 0.0],
              [-1.0, 0.0, 0.0],
@@ -64,24 +63,25 @@ class GaussianSplatting:
              [0.0, -1.0, 0.0]]
             , device=self.device
         )
-        self.scales = torch.ones(self.num_points, 3, device=self.device) * 0.1
-        self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
-        self.sh_coeffs = torch.tensor(
+        scales = torch.ones(self.num_points, 3, device=self.device) * 0.1
+        opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
+        sh_coeffs = torch.zeros(7, 25, 3, device=self.device)
+        sh_coeffs[:,0,:] = torch.tensor(
             [
-                [[-10.0, -10.0, -10.0]],
-                [[10.0, -10.0, -10.0]],
-                [[-10.0, 10.0, -10.0]],
-                [[-10.0, -10.0, 10.0]],
-                [[-10.0, 10.0, -10.0]],
-                [[10.0, 10.0, -10.0]],
-                [[-10.0, 10.0, -10.0]]
+                [-10.0, -10.0, -10.0],
+                [10.0, -10.0, -10.0],
+                [-10.0, 10.0, -10.0],
+                [-10.0, -10.0, 10.0],
+                [-10.0, 10.0, -10.0],
+                [10.0, 10.0, -10.0],
+                [-10.0, 10.0, -10.0]
             ],
             device=self.device
         )
         u = torch.rand(self.num_points, 1, device=self.device)
         v = torch.rand(self.num_points, 1, device=self.device)
         w = torch.rand(self.num_points, 1, device=self.device)
-        self.quats = torch.cat(
+        quats = torch.cat(
             [
                 torch.sqrt(1.0 - u) * torch.sin(2.0 * math.pi * v),
                 torch.sqrt(1.0 - u) * torch.cos(2.0 * math.pi * v),
@@ -91,7 +91,21 @@ class GaussianSplatting:
             -1
         )
 
-        self.sh_degree = 0
+        if add_axis:
+            self.means = torch.cat((self.means, means), 0)
+            self.scales = torch.cat((self.scales, scales), 0)
+            self.opacities = torch.cat((self.opacities, opacities), 0)
+            self.sh_coeffs = torch.cat((self.sh_coeffs, sh_coeffs), 0)
+            self.quats = torch.cat((self.quats, quats), 0)
+            self.num_points += 7
+        else:
+            self.means = means
+            self.scales = scales
+            self.opacities = opacities
+            self.sh_coeffs = sh_coeffs
+            self.quats = quats
+            self.sh_degree = 0
+            self.num_points = 7
 
     def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None):
         if load_path:
@@ -107,9 +121,9 @@ class GaussianSplatting:
             self.num_points = self.opacities.shape[0]
         elif point_cloud:
             print("Creating gaussians from SFM point cloud")
-            xzys, rgbs, errors = point_cloud
+            xyzs, rgbs, errors = point_cloud
 
-            self.means = torch.tensor(np.float32(xzys), device=self.device)
+            self.means = torch.tensor(np.float32(xyzs), device=self.device)
             self.num_points = self.means.shape[0]
         
             #TODO scales
