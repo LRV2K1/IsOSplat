@@ -238,7 +238,7 @@ class GaussianSplatting:
 
                 self.add_densification_states()
 
-                print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
+                # print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):
@@ -431,8 +431,9 @@ class GaussianSplatting:
             loss += self.optimizer.l_smooth * loss_functions.l_smooth(nv_depth, edge_map)
         return loss, img_loss
 
-    def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], save_path: Optional[Path] = None):
+    def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], save_path: Optional[Path] = None) -> float:
 
+        average_loss = 0.0
         with torch.no_grad():
             for name in data_list:
                 gt_view, camera, add_data = data[name]
@@ -449,6 +450,7 @@ class GaussianSplatting:
                 nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera, background_depth=bg_depth)
                 loss, img_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
 
+                average_loss += img_loss
                 print(f"Image: {name}, Loss:{loss.item()}")
                 print(f"Image: {name}, Img_Loss:{img_loss}")
                 if save_path:
@@ -467,3 +469,4 @@ class GaussianSplatting:
 
                     depth_image = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
                     depth_image.save(f"{save_path}/{name}_depth.png")
+        return average_loss / len(data_list)
