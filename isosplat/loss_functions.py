@@ -57,3 +57,26 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
         return ssim_map.mean()
     else:
         return ssim_map.mean(1).mean(1).mean(1)
+
+
+uv_s = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+
+def l_smooth(out_depth: Tensor, edge_map: Tensor) -> Tensor:
+    height, width = out_depth.shape
+    edge_map_l = edge_map[1:height-1, 1:width-1]
+    final_smooth = torch.zeros(height-2, width-2, device=out_depth.device)
+    d_i = out_depth[1:height-1, 1:width-1]
+    for uv in uv_s:     # go over all adjacent
+        u, v = uv
+        d_j = out_depth[(1+u):((height-1)+u), (1+v):((width-1)+v)]  # shift to adjacent pixel
+
+        if v > 0 or (v == 0 and u > 0):
+            d_j[edge_map_l] = d_i[edge_map_l]  # set in edge
+        else:
+            d_i[edge_map_l] = d_j[edge_map_l]  # set in edge
+
+        l2 = l2_loss(d_i, d_j)
+        final_smooth += l2  # add smooth
+    return final_smooth.mean()
+

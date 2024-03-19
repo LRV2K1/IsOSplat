@@ -38,8 +38,6 @@ class CannyEdgeDetector:
                                         device=device,
                                         bias=False)
         self.sobel_filter_y.weight = torch.nn.Parameter(sobel_weight_tensor)
-        print(self.sobel_filter_x.weight)
-        print(self.sobel_filter_y.weight)
 
         self.threshold_low = threshold_low
         self.threshold_high = threshold_high
@@ -112,9 +110,7 @@ class CannyEdgeDetector:
                     E_bin_list = self.trace_and_threshold(local_max_list, E_bin_list, u, v, height, width)
 
         E_bin = torch.tensor(E_bin_list, dtype=torch.bool, device=device)
-        return_image = E_bin
-
-        return return_image
+        return E_bin
 
     def trace_and_threshold(self, local_max: list, E_bin: list, u, v, height, width) -> Tensor:
         E_bin[u][v] = True

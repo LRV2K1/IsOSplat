@@ -20,7 +20,8 @@ def main(
         depth_model: DepthModel = DepthModel.NoDepth,
         no_alpha: bool = True,
         l_ssim: float = 0.2,
-        l_depth: float = 0.1
+        l_depth: float = 0.1,
+        l_smooth: float = 0.1
 ) -> None:
     device = torch.device("cuda:0")
 
@@ -36,7 +37,7 @@ def main(
     trainer = GaussianSplatting(device)
 
     trainer.init_gaussians(splats, load_path, point_cloud)
-    trainer.init_optimizer(lr, l_ssim, l_depth)
+    trainer.init_optimizer(lr, l_ssim, l_depth, l_smooth)
     if iterations > 0 and len(data_list) > 0:
         trainer.train(
             data_list=data_list,

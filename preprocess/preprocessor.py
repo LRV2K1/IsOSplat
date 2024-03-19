@@ -7,8 +7,9 @@ from torch import Tensor
 
 from isosplat.camera import Camera
 from .depth_map_normilizer import PointCloud, DepthMapNormalizer
+from .edge_detector import CannyEdgeDetector
 from .colmap_loader import read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary
-from .image_loader import image_path_to_tensor
+from .image_loader import image_path_to_tensor, save_img_from_tensor
 from .camera_constructor import create_camera_from_cam_file, create_camera_from_sfm_data
 from .marigold_loader import load_depth_map
 
@@ -96,7 +97,7 @@ class PreProcessor:
                     if not no_alpha:
                         add_data["alpha"] = gt_alpha
 
-                    width, height = gt_image.shape[0], gt_image.shape[1]
+                    height, width = gt_image.shape[0], gt_image.shape[1]
                     camera = create_camera_from_cam_file(width, height, self.cams_path / f"{name}.cam", device)
 
                     data[name] = gt_image, camera, add_data
@@ -130,8 +131,19 @@ class PreProcessor:
                     camera = Camera(width, height, width/2, height/2, width/2, height/2, device)
                     camera.set_position(0, 0, 8.0)
                     camera.look_at(0, 0, 0)
-                    data_list = [name]
-                    data = {name: (gt_image, camera, add_data)}
+
+                    data[name] = gt_image, camera, add_data
+                    data_list.append(name)
+
+        depth_map_normalizer = DepthMapNormalizer()
+        edge_detector = CannyEdgeDetector(device)
+
+        if not depth_model == DepthModel.NoDepth:
+            for name in data_list:
+                gt_image, camera, add_data = data[name]
+                edge_map = edge_detector.calculate_edge_map(name, gt_image, device)
+                add_data["edges"] = edge_map
+                data[name] = gt_image, camera, add_data
 
         if depth_model == DepthModel.SFM:
             for sfm_image in sfm_images.values():
@@ -139,7 +151,6 @@ class PreProcessor:
                 gt_image, camera, add_data = data[name]
 
                 npy_depth_map = load_depth_map(self.depth_path / f"{name}_pred.npy")
-                depth_map_normalizer = DepthMapNormalizer()
                 depth_map = depth_map_normalizer.normalize_depth_map(name, npy_depth_map,
                     pid, point_cloud, sfm_image, camera, device)
                 
@@ -151,7 +162,6 @@ class PreProcessor:
                 gt_image, camera, add_data = data[name]
 
                 npy_depth_map = load_depth_map(self.depth_path / f"{name}_pred.npy")
-                depth_map_normalizer = DepthMapNormalizer()
                 depth_map = depth_map_normalizer.normalize_depth_map_file(name, npy_depth_map, self.depth_file_path, device)
 
                 add_data["depth"] = depth_map
