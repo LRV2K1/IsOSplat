@@ -7,7 +7,7 @@ from torch import Tensor
 
 from isosplat.camera import Camera
 from .depth_map_normilizer import PointCloud, DepthMapNormalizer
-from .edge_detector import CannyEdgeDetector
+from .edge_detector import CannyEdgeDetector, CV2CannyEdgeDetector
 from .colmap_loader import read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary
 from .image_loader import image_path_to_tensor, save_img_from_tensor
 from .camera_constructor import create_camera_from_cam_file, create_camera_from_sfm_data
@@ -54,7 +54,8 @@ class PreProcessor:
     def preprocess_data(
             self, device: torch.device,
             initialize: Initialize = Initialize.Random, cam_model: CamModel = CamModel.NoCam,
-            depth_model: DepthModel = DepthModel.NoDepth, no_alpha: bool = True
+            depth_model: DepthModel = DepthModel.NoDepth, no_alpha: bool = True,
+            edge_low: float = 0.5, edge_high: float = 0.8
                         ) -> tuple[list[str], dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], PointCloud]:
         
         if not self.has_img:
@@ -136,7 +137,8 @@ class PreProcessor:
                     data_list.append(name)
 
         depth_map_normalizer = DepthMapNormalizer()
-        edge_detector = CannyEdgeDetector(device)
+        # edge_detector = CannyEdgeDetector(device)
+        edge_detector = CV2CannyEdgeDetector(edge_low, edge_high)
 
         if not depth_model == DepthModel.NoDepth:
             for name in data_list:
@@ -144,6 +146,7 @@ class PreProcessor:
                 edge_map = edge_detector.calculate_edge_map(name, gt_image, device)
                 add_data["edges"] = edge_map
                 data[name] = gt_image, camera, add_data
+                save_img_from_tensor(edge_map, "edges", name)
 
         if depth_model == DepthModel.SFM:
             for sfm_image in sfm_images.values():

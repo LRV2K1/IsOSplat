@@ -9,7 +9,6 @@ import torch
 from preprocess.preprocessor import Initialize, CamModel, DepthModel, PreProcessor, PointCloud
 
 
-
 class OptunaStudy:   
     def __init__(self, data_path: Path, storage_path: Path, iterations):
         self.iterations = iterations
@@ -21,6 +20,8 @@ class OptunaStudy:
         initialize=Initialize.SFM, 
         depth_model=DepthModel.SFM, 
         no_alpha=True, 
+        edge_low=0.5,
+        edge_high=0.8,
         device=self.device)
 
         self.data_list = data_list
@@ -70,10 +71,10 @@ def start(data_path: Path,
         storage="sqlite:///db.sqlite3",  # Specify the storage URL here.
         study_name=study_name
     )
-    ostudy = OptunaStudy(data_path, storage_path, iterations)
-    study.optimize(ostudy.objective, n_trials=n_trials)
-    # study.optimize(objective, n_trials=100)
-    # print(f"Best value: {study.best_value} (params: {study.best_params})")
+    # ostudy = OptunaStudy(data_path, storage_path, iterations)
+    # study.optimize(ostudy.objective, n_trials=n_trials)
+    study.optimize(objective, n_trials=100)
+    print(f"Best value: {study.best_value} (params: {study.best_params})")
 
 if __name__ == '__main__':
     tyro.cli(start)

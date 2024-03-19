@@ -1,6 +1,8 @@
 import torch
 from torch import Tensor, nn
 import numpy as np
+import cv2 as cv
+from PIL import Image
 
 
 class CannyEdgeDetector:
@@ -142,3 +144,16 @@ def get_gaussian_kernel(k: int = 3, mu: float = 0, sigma: float = 1, normalize: 
         gaussian_2D = gaussian_2D / np.sum(gaussian_2D)
     return gaussian_2D
 
+
+class CV2CannyEdgeDetector:
+    def __init__(self, threshold_low: float = 0.5, threshold_high = 0.8):
+        self.threshold_low = threshold_low * 255
+        self.threshold_high = threshold_low * 255
+    
+    def calculate_edge_map(self, name: str, img: Tensor, device: torch.device) -> Tensor:
+        print(f"Calculate edge map {name}")
+        image = (img.detach().cpu().numpy() * 255).astype(np.uint8)
+        edges = cv.Canny(image, self.threshold_low, self.threshold_high)
+
+        edge_map = torch.tensor(edges, dtype=torch.bool, device=device)
+        return edge_map

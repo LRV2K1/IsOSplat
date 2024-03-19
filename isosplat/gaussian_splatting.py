@@ -238,7 +238,7 @@ class GaussianSplatting:
 
                 self.add_densification_states()
 
-                # print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
+                print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):

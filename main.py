@@ -22,7 +22,9 @@ def main(
         no_alpha: bool = True,
         l_ssim: float = 0.2,
         l_depth: float = 0.1,
-        l_smooth: float = 0.1
+        l_smooth: float = 0.1,
+        edge_low: float = 0.5,
+        edge_high: float = 0.8
 ) -> float:
     device = torch.device("cuda:0")
 
@@ -32,6 +34,8 @@ def main(
         initialize=initialize, 
         depth_model=depth_model, 
         no_alpha=no_alpha, 
+        edge_low=edge_low,
+        edge_high=edge_high,
         device=device)
     
     trainer = train(
@@ -46,6 +50,7 @@ def main(
         iterations=iterations,
         splats=splats,
         device=device)
+        
     loss = verify(
         trainer=trainer,
         save_path=save_path,
@@ -55,12 +60,14 @@ def main(
     return loss
 
 
-def preprocess(data_path: Optional[Path], cam_model: CamModel, initialize: Initialize, depth_model: DepthModel, no_alpha: bool, device: torch.device
+def preprocess(data_path: Optional[Path], cam_model: CamModel, initialize: Initialize, depth_model: DepthModel, no_alpha: bool, edge_low: float, edge_high: float, device: torch.device
                ) -> tuple[list[str], dict[str, any], PointCloud]:
     preprocessor = PreProcessor(data_path)
     data_list, data, point_cloud = preprocessor.preprocess_data(
         device=device,
         cam_model=cam_model,
+        edge_low=edge_low,
+        edge_high=edge_high,
         initialize=initialize,
         depth_model=depth_model,
         no_alpha=no_alpha
