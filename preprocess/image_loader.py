@@ -1,5 +1,7 @@
 from pathlib import Path
 from PIL import Image
+import numpy as np
+import os
 
 import torch
 from torch import Tensor
@@ -19,3 +21,10 @@ def image_path_to_tensor(image_path: Path, device: torch.device) -> tuple[Tensor
     img_tensor = img_tensor.to(device=device)
     img_alpha_tensor = img_alpha_tensor.to(device=device)
     return img_tensor, img_alpha_tensor
+
+
+def save_img_from_tensor(img: Tensor, image_path: Path, name: str):
+    if not os.path.exists(image_path):
+        os.makedirs(image_path)
+    image = Image.fromarray((img.detach().cpu().numpy() * 255).astype(np.uint8))
+    image.save(f"{image_path}/{name}.png")
