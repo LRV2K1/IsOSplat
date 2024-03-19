@@ -146,7 +146,7 @@ class PreProcessor:
                 edge_map = edge_detector.calculate_edge_map(name, gt_image, device)
                 add_data["edges"] = edge_map
                 data[name] = gt_image, camera, add_data
-                save_img_from_tensor(edge_map, "edges", name)
+                # save_img_from_tensor(edge_map, "edges", name)
 
         if depth_model == DepthModel.SFM:
             for sfm_image in sfm_images.values():

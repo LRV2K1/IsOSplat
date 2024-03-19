@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional
+import threading
 
 import main
 import tyro
@@ -61,20 +62,43 @@ def objective(trial):
     return x**2 + y   
 
 
+def block(data_path: Path,
+          storage_path: Path,
+          study: optuna.Study,
+          n_trials: int,
+          iterations: int):
+    ostudy = OptunaStudy(data_path, storage_path, iterations)
+    study.optimize(ostudy.objective, n_trials=n_trials)
+
+
 def start(data_path: Path,
          storage_path: Path,
          study_name: str,
          n_trials: int = 100,
+         blocks: int = 1,
          iterations: int = 1000):
+    studies = optuna.get_all_study_names(storage="sqlite:///db.sqlite3")
+
+    if study_name in studies:
+        study = optuna.load_study(storage="sqlite:///db.sqlite3",  # Specify the storage URL here.
+        study_name=study_name)
+    else:
+        study = optuna.create_study(storage="sqlite:///db.sqlite3",  # Specify the storage URL here.
+            study_name=study_name)
     
-    study = optuna.create_study(
-        storage="sqlite:///db.sqlite3",  # Specify the storage URL here.
-        study_name=study_name
-    )
+    threads = []
+    for i in range(blocks):
+        thread = threading.Thread(target=block, args=(data_path, storage_path, study, n_trials, iterations))
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
+        
     # ostudy = OptunaStudy(data_path, storage_path, iterations)
     # study.optimize(ostudy.objective, n_trials=n_trials)
-    study.optimize(objective, n_trials=100)
-    print(f"Best value: {study.best_value} (params: {study.best_params})")
+    # study.optimize(objective, n_trials=100)
+    # print(f"Best value: {study.best_value} (params: {study.best_params})")
 
 if __name__ == '__main__':
     tyro.cli(start)
