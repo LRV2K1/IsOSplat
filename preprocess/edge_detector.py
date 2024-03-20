@@ -1,12 +1,19 @@
-import torch
-from torch import Tensor, nn
 import numpy as np
 import cv2 as cv
-from PIL import Image
+
+import torch
+from torch import Tensor, nn
 
 
 class CannyEdgeDetector:
-    def __init__(self, device: torch.device, threshold_low: float = 0.15, threshold_high: float = 0.3, sigma: float = 1, kernel_size: int = 3):
+    def __init__(
+            self,
+            device: torch.device,
+            threshold_low: float = 0.3,
+            threshold_high: float = 0.8,
+            sigma: float = 1,
+            kernel_size: int = 3
+    ):
         gaussian_kernel = get_gaussian_kernel(k=kernel_size, sigma=sigma)
         self.gaussian_filter = nn.Conv2d(in_channels=1,
                                          out_channels=1,
@@ -18,7 +25,7 @@ class CannyEdgeDetector:
         gaussian_weight_tensor[0, 0] = torch.from_numpy(gaussian_kernel)
         self.gaussian_filter.weight = torch.nn.Parameter(gaussian_weight_tensor)
 
-        sobel_2D = torch.tensor([
+        sobel_2d = torch.tensor([
             [-0.5, 0, 0.5],
             [-1, 0, 1],
             [-0.5, 0, 0.5]
@@ -30,7 +37,7 @@ class CannyEdgeDetector:
                                         device=device,
                                         bias=False)
         sobel_weight_tensor = torch.zeros_like(self.sobel_filter_x.weight, device=device)
-        sobel_weight_tensor[0, 0] = sobel_2D
+        sobel_weight_tensor[0, 0] = sobel_2d
         self.sobel_filter_x.weight = torch.nn.Parameter(torch.transpose(sobel_weight_tensor, 2, 3))
 
         self.sobel_filter_y = nn.Conv2d(in_channels=1,
@@ -46,31 +53,31 @@ class CannyEdgeDetector:
 
     def calculate_edge_map(self, name: str, img: Tensor, device: torch.device) -> Tensor:
         print(f"Calculate edge map {name}")
-        height, width, c = img.shape
+        height, width, colors = img.shape
 
-        blurred = torch.zeros(c, height, width, device=device)
+        blurred = torch.zeros(colors, height, width, device=device)
 
-        A = torch.zeros(1, height, width, device=device)
-        B = torch.zeros(1, height, width, device=device)
-        C = torch.zeros(1, height, width, device=device)
-        for i in range(c):
+        a = torch.zeros(1, height, width, device=device)
+        b = torch.zeros(1, height, width, device=device)
+        c = torch.zeros(1, height, width, device=device)
+        for i in range(colors):
             blurred[i, :, :] = img[:, :, i]
             blurred[i:i+1, :, :] = self.gaussian_filter(blurred[i:i+1, :, :])
 
             grad_x = self.sobel_filter_x(blurred[i:i+1, :, :])
             grad_y = self.sobel_filter_y(blurred[i:i+1, :, :])
-            A = A + grad_x ** 2
-            B = B + grad_y ** 2
-            C = C + grad_x * grad_y
+            a = a + grad_x ** 2
+            b = b + grad_y ** 2
+            c = c + grad_x * grad_y
 
-        D = ((A - B) ** 2 + 4 * C ** 2) ** 0.5
-        grad_magnitude = (0.5 * (A + B + D)) ** 0.5
-        E_x = A - B + D
-        E_y = 2 * C
+        d = ((a - b) ** 2 + 4 * c ** 2) ** 0.5
+        grad_magnitude = (0.5 * (a + b + d)) ** 0.5
+        e_x = a - b + d
+        e_y = 2 * c
 
         rot = np.pi / 8
-        orientation_x = E_x * np.cos(rot) - E_y * np.sin(rot)
-        orientation_y = E_x * np.sin(rot) - E_y * np.cos(rot)
+        orientation_x = e_x * np.cos(rot) - e_y * np.sin(rot)
+        orientation_y = e_x * np.sin(rot) - e_y * np.cos(rot)
         mirror_mask = orientation_y < 0
         orientation_x[mirror_mask] *= -1
         orientation_y[mirror_mask] *= -1
@@ -101,54 +108,54 @@ class CannyEdgeDetector:
         local_max = torch.zeros_like(grad_magnitude, device=device)
         local_max[local_max_mask] = grad_magnitude[local_max_mask]
 
-        E_bin = torch.zeros(height, width, dtype=torch.bool, device=device)
+        e_bin = torch.zeros(height, width, dtype=torch.bool, device=device)
 
         local_max_list = local_max[0].tolist()
-        E_bin_list = E_bin.tolist()
+        e_bin_list = e_bin.tolist()
 
         for u in range(1, height-2):
             for v in range(1, width - 2):
-                if (local_max_list[u][v] >= self.threshold_high) and not E_bin_list[u][v]:
-                    E_bin_list = self.trace_and_threshold(local_max_list, E_bin_list, u, v, height, width)
+                if (local_max_list[u][v] >= self.threshold_high) and not e_bin_list[u][v]:
+                    e_bin_list = self.trace_and_threshold(local_max_list, e_bin_list, u, v, height, width)
 
-        E_bin = torch.tensor(E_bin_list, dtype=torch.bool, device=device)
-        return E_bin
+        e_bin = torch.tensor(e_bin_list, dtype=torch.bool, device=device)
+        return e_bin
 
-    def trace_and_threshold(self, local_max: list, E_bin: list, u, v, height, width) -> Tensor:
-        E_bin[u][v] = True
+    def trace_and_threshold(self, local_max: list, e_bin: list, u, v, height, width) -> Tensor:
+        e_bin[u][v] = True
         ut = max(u-1, 0)
         ub = min(u+1, height - 1)
         vl = max(v-1, 0)
         vr = min(v+1, width-1)
         for un in range(ut, ub+1):
             for vn in range(vl, vr+1):
-                if (local_max[un][vn] >= self.threshold_low) and not E_bin[un][vn]:
-                    E_bin = self.trace_and_threshold(local_max, E_bin, un, vn, height, width)
+                if (local_max[un][vn] >= self.threshold_low) and not e_bin[un][vn]:
+                    e_bin = self.trace_and_threshold(local_max, e_bin, un, vn, height, width)
 
-        return E_bin
+        return e_bin
 
 
 def get_gaussian_kernel(k: int = 3, mu: float = 0, sigma: float = 1, normalize: bool = True) -> np.ndarray:
     # compute 1 dimension gaussian
-    gaussian_1D = np.linspace(-1, 1, k)
+    gaussian_1d = np.linspace(-1, 1, k)
     # compute a grid distance from center
-    x, y = np.meshgrid(gaussian_1D, gaussian_1D)
+    x, y = np.meshgrid(gaussian_1d, gaussian_1d)
     distance = (x ** 2 + y ** 2) ** 0.5
 
     # compute the 2 dimension gaussian
-    gaussian_2D = np.exp(-(distance - mu) ** 2 / (2 * sigma ** 2))
-    gaussian_2D = gaussian_2D / (2 * np.pi * sigma ** 2)
+    gaussian_2d = np.exp(-(distance - mu) ** 2 / (2 * sigma ** 2))
+    gaussian_2d = gaussian_2d / (2 * np.pi * sigma ** 2)
 
     # normalize part (mathematically)
     if normalize:
-        gaussian_2D = gaussian_2D / np.sum(gaussian_2D)
-    return gaussian_2D
+        gaussian_2d = gaussian_2d / np.sum(gaussian_2d)
+    return gaussian_2d
 
 
 class CV2CannyEdgeDetector:
-    def __init__(self, threshold_low: float = 0.5, threshold_high = 0.8):
+    def __init__(self, threshold_low: float = 0.3, threshold_high: float = 0.8):
         self.threshold_low = threshold_low * 255
-        self.threshold_high = threshold_low * 255
+        self.threshold_high = threshold_high * 255
     
     def calculate_edge_map(self, name: str, img: Tensor, device: torch.device) -> Tensor:
         print(f"Calculate edge map {name}")

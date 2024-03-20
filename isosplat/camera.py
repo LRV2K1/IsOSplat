@@ -5,12 +5,13 @@ from torch import Tensor
 
 class Camera:
 
-    def __init__(self,
-                 width: int, height: int,
-                 focalx: float, focaly: float,
-                 cx: float, cy: float,
-                 # near: float, far: float,
-                 device: torch.device):
+    def __init__(
+            self,
+            width: int, height: int,
+            focalx: float, focaly: float,
+            cx: float, cy: float,
+            device: torch.device
+    ):
         self.device = device
 
         self.width = width
@@ -35,6 +36,15 @@ class Camera:
                 [0.0, fov_height, 0.0, 0.0],
                 [0.0, 0.0, a, b],
                 [0.0, 0.0, -1.0, 0.0]
+            ],
+            device=self.device
+        )
+        self.rotation_mat = torch.tensor(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0]
             ],
             device=self.device
         )
@@ -70,6 +80,7 @@ class Camera:
                 ],
                 device=self.device
             )
+
             self.model_view_mat = torch.matmul(self.rotation_mat, translation_mat)
             self.model_view_mat.requires_grad = False
 

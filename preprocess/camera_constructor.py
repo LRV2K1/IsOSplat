@@ -1,11 +1,8 @@
 from pathlib import Path
+import numpy as np
 
 import torch
-from torch import Tensor
 from isosplat.camera import Camera
-
-from PIL import Image
-import numpy as np
 
 import preprocess.colmap_loader as prep
 
@@ -32,37 +29,41 @@ def create_camera_from_cam_file(width: int, height: int, cam_path: Path, device:
 
 def create_camera_from_sfm_data(cam_data: prep.Camera, img_data: prep.Image, device: torch.device) -> Camera:
     if img_data.camera_id is not cam_data.id:
-        print(f"image_data.camera_id: {img_data.camera_id}, and cam_data.id: {cam_data.id} are not the same")
-        return None
+        raise Exception(f"image_data.camera_id: {img_data.camera_id}, and cam_data.id: {cam_data.id} are not the same")
     
-    R = np.transpose(img_data.qvec2rotmat())
-    R = R.transpose()
-    F = np.zeros((3, 3))
-    F[0, 0] = 1
-    F[1, 1] = -1
-    F[2, 2] = -1
-    R = np.matmul(R, F)
-    T = np.array(img_data.tvec)
+    rot = np.transpose(img_data.qvec2rotmat())
+    rot = rot.transpose()
+    flip = np.zeros((3, 3))
+    flip[0, 0] = 1
+    flip[1, 1] = -1
+    flip[2, 2] = -1
+    rot = np.matmul(rot, flip)
+    trans = np.array(img_data.tvec)
    
     tr = np.zeros((4, 4))
-    tr[:3, :3] = R
-    tr[:3, 3] = T
+    tr[:3, :3] = rot
+    tr[:3, 3] = trans
     tr[3, 3] = 1.0
-    C2W = np.linalg.inv(tr)
-    cam_center = C2W[:3, 3]
+    cam2world = np.linalg.inv(tr)
+    cam_center = cam2world[:3, 3]
 
     # rotate camera by 180 degrees
-    K = np.zeros((3, 3))
-    K[0, 0] = -1
-    K[1, 1] = -1
-    K[2, 2] = 1
-    nr = np.matmul(K, R)
+    k = np.zeros((3, 3))
+    k[0, 0] = -1
+    k[1, 1] = -1
+    k[2, 2] = 1
+    nr = np.matmul(k, rot)
     rot = np.zeros((4, 4))
     rot[:3, :3] = nr
     rot[3, 3] = 1.0
 
     view = torch.tensor(np.float32(rot), device=device)
-    camera = Camera(cam_data.width, cam_data.height, float(cam_data.params[0]), float(cam_data.params[0]), float(cam_data.params[1]), float(cam_data.params[2]), device)
+
+    focalx = float(cam_data.params[0])
+    focaly = float(cam_data.params[0])
+    cx = float(cam_data.params[1])
+    cy = float(cam_data.params[2])
+    camera = Camera(cam_data.width, cam_data.height, focalx, focaly, cx, cy, device)
     camera.set_position(float(cam_center[0]), float(cam_center[1]), float(cam_center[2]))
     camera.set_rotation(view)
     return camera

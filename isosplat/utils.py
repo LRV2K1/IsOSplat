@@ -1,11 +1,18 @@
 import math
-import torch
-from torch import Tensor
-from typing import Tuple
-
+from typing import Tuple, NewType, Optional
+import numpy as np
 from jaxtyping import Float, Int
 
+import torch
+from torch import Tensor
+
 import isosplat.cuda as _C
+from isosplat.camera import Camera
+
+
+PointCloud = NewType("PointCloud", Optional[tuple[np.ndarray, np.ndarray, np.ndarray]])
+Data = NewType("Data", dict[str, tuple[Tensor, Camera, dict[str, any]]])
+DataList = NewType("DataList", list[str])
 
 
 def inverse_sigmoid(x):

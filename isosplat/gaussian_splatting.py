@@ -3,29 +3,25 @@ import os
 import time
 from pathlib import Path
 from typing import Optional
-
 import numpy as np
-from typing import NewType
+from PIL import Image
+import random
+
+import torch
+from torch import Tensor
+from torchrl.record import CSVLogger
 
 from .camera import Camera
 from .optimizer import Optimizer
 import isosplat.loss_functions as loss_functions
 import isosplat.utils as utils
-
-import torch
-from torch import Tensor
-from torchrl.record import CSVLogger
+from isosplat.utils import PointCloud, DataList, Data
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
 from isosplat import spherical_harmonics
-from PIL import Image
 
-import random
 
 BLOCK_WIDTH = 16
-
-
-PointCloud = NewType('PointCloud', tuple[np.ndarray, np.ndarray, np.ndarray])
 
 
 class GaussianSplatting:
@@ -35,16 +31,16 @@ class GaussianSplatting:
         self.frames: list = []
 
         self.num_points: int = 0
-        self.means: Tensor
-        self.scales: Tensor
-        self.opacities: Tensor
-        self.sh_coeffs: Tensor
-        self.quats: Tensor
-        self.acc_grad: Tensor
-        self.denom: Tensor
+        self.means: Optional[Tensor] = None
+        self.scales: Optional[Tensor] = None
+        self.opacities: Optional[Tensor] = None
+        self.sh_coeffs: Optional[Tensor] = None
+        self.quats: Optional[Tensor] = None
+        self.acc_grad: Optional[Tensor] = None
+        self.denom: Optional[Tensor] = None
         self.sh_degree: int = 0
 
-        self.optimizer: Optimizer
+        self.optimizer: Optional[Optimizer] = None
 
         self.splits = 0
         self.clones = 0
@@ -59,13 +55,13 @@ class GaussianSplatting:
              [0.0, 0.0, 1.0],
              [0.0, 0.0, -1.0],
              [0.0, 1.0, 0.0],
-             [0.0, -1.0, 0.0]]
-            , device=self.device
+             [0.0, -1.0, 0.0]],
+            device=self.device
         )
         scales = torch.ones(self.num_points, 3, device=self.device) * 0.1
         opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
         sh_coeffs = torch.zeros(7, 25, 3, device=self.device)
-        sh_coeffs[:,0,:] = torch.tensor(
+        sh_coeffs[:, 0, :] = torch.tensor(
             [
                 [-10.0, -10.0, -10.0],
                 [10.0, -10.0, -10.0],
@@ -106,7 +102,13 @@ class GaussianSplatting:
             self.sh_degree = 0
             self.num_points = 7
 
-    def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None, logger: Optional[CSVLogger] = None):
+    def init_gaussians(
+            self,
+            splats: int,
+            load_path: Optional[Path] = None,
+            point_cloud: PointCloud = None,
+            logger: Optional[CSVLogger] = None
+    ):
         if load_path:
             print("Loading existing gaussians")
             self.means = torch.load(load_path / "means.pt")
@@ -125,15 +127,15 @@ class GaussianSplatting:
             self.means = torch.tensor(np.float32(xyzs), device=self.device)
             self.num_points = self.means.shape[0]
         
-            #TODO scales
+            # TODO scales
             self.scales = torch.ones(self.num_points, 3, device=self.device) * 0.01
             self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
 
             colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs/256), device=self.device))
             self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
-            self.sh_coeffs[:,0,:] = colors
+            self.sh_coeffs[:, 0, :] = colors
             self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
-            self.denom = torch.zeros(self.num_points, 1, dtype=int, device=self.device)
+            self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
 
             u = torch.rand(self.num_points, 1, device=self.device)
             v = torch.rand(self.num_points, 1, device=self.device)
@@ -157,7 +159,7 @@ class GaussianSplatting:
             self.opacities = torch.ones((self.num_points, 1), device=self.device)
             self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
             self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
-            self.denom = torch.zeros(self.num_points, 1, dtype=int, device=self.device)
+            self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
 
             u = torch.rand(self.num_points, 1, device=self.device)
             v = torch.rand(self.num_points, 1, device=self.device)
@@ -210,12 +212,12 @@ class GaussianSplatting:
     def _add_sh_band(self, itr: int) -> bool:
         return itr % 1000 == 0 and self.sh_degree < 4 and itr > 0
 
-    def train(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], iterations: int = 200, logger: Optional[CSVLogger] = None):
+    def train(self, data_list: DataList, data: Data, iterations: int = 200, logger: Optional[CSVLogger] = None):
         n_data = len(data)
 
         for itr in range(iterations):
             average_image_loss = 0
-            average_loss= 0
+            average_loss = 0
             data_itr = 0
             if self._is_reset_iteration(itr, iterations):
                 self._reset_opacity()
@@ -260,19 +262,25 @@ class GaussianSplatting:
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-        torch.save(self.sh_coeffs, f"{save_path}/sh.pt")  # sh_coeffs
-        torch.save(self.means, f"{save_path}/means.pt")  # means
-        torch.save(self.scales, f"{save_path}/scales.pt")  # scales
-        torch.save(self.opacities, f"{save_path}/opacities.pt")  # opacities
-        torch.save(self.quats, f"{save_path}/quats.pt")  # quats
-        torch.save(self.acc_grad, f"{save_path}/acc_grad.pt") # acc grads
-        torch.save(self.denom, f"{save_path}/denom.pt") # acc grads
+        torch.save(self.sh_coeffs, f"{save_path}/sh.pt")
+        torch.save(self.means, f"{save_path}/means.pt")
+        torch.save(self.scales, f"{save_path}/scales.pt")
+        torch.save(self.opacities, f"{save_path}/opacities.pt")
+        torch.save(self.quats, f"{save_path}/quats.pt")
+        torch.save(self.acc_grad, f"{save_path}/acc_grad.pt")
+        torch.save(self.denom, f"{save_path}/denom.pt")
 
     def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
         return spherical_harmonics(degrees_to_use, view_dirs, sh_coeffs)
 
-    def rasterize(self, camera: Camera, size: float = 1.0, background_depth: float = 20.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
+    def rasterize(
+            self,
+            camera: Camera,
+            size: float = 1.0,
+            background_depth: float = 20.0,
+            color: Optional[Tensor] = None
+    ) -> tuple[Tensor, Tensor, Tensor, float, float]:
         view_mat, project_mat = camera.get_view_and_project_matrix()
         focalx, focaly = camera.get_focal()
         width, height = camera.get_size()
@@ -280,7 +288,7 @@ class GaussianSplatting:
 
         start = time.time()  # get iteration start time
 
-        if color == None:
+        if color is None:
             color = self.background
 
         xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
@@ -323,12 +331,24 @@ class GaussianSplatting:
         t1 = time.time() - start
         return out_img, out_alpha, out_depth, t0, t1
 
-    def render(self, camera: Camera, size: float = 1.0, background_depth: float = 20.0, color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, float, float]:
+    def render(
+            self,
+            camera: Camera,
+            size: float = 1.0,
+            background_depth: float = 20.0,
+            color: Optional[Tensor] = None
+    ) -> tuple[Tensor, Tensor, float, float]:
         with torch.no_grad():
             out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, background_depth, color)
             return out_img, out_depth, t0, t1
 
-    def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float) -> tuple[int, int, int]:
+    def _densify_and_prune(
+            self,
+            grad_threshold: float,
+            opacity_threshold: float,
+            size_threshold: float,
+            extend: float
+    ) -> tuple[int, int, int]:
         grads = self.acc_grad / self.denom
         grads[grads.isnan()] = 0.0
         
@@ -343,7 +363,7 @@ class GaussianSplatting:
         self.culls += culls
 
         self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
-        self.denom = torch.zeros(self.num_points, 1, dtype=int, device= self.device)
+        self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
 
         torch.cuda.empty_cache()
         return culls, clones, splits
@@ -352,7 +372,7 @@ class GaussianSplatting:
         # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         padded_grads = torch.zeros(self.num_points - grads.shape[0], grads.shape[1], device=self.device)
         padded_grads = torch.cat((grads, padded_grads))
-        mask = torch.where(torch.norm(padded_grads, dim=-1)  >= grad_threshold, True, False)
+        mask = torch.where(torch.norm(padded_grads, dim=-1) >= grad_threshold, True, False)
         mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values > size_threshold)
 
         positional_gradient = _ProjectGaussians.getPositionalGradient()
@@ -432,7 +452,8 @@ class GaussianSplatting:
         if "edges" in add_data:
             edge_map = add_data["edges"]
 
-        loss = (1.0 - self.optimizer.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) + self.optimizer.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
+        loss = (1.0 - self.optimizer.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) \
+            + self.optimizer.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
         img_loss = loss.item()
         if gt_depth is not None and nv_depth is not None:
             loss += self.optimizer.l_depth * loss_functions.l1_loss(nv_depth, gt_depth)
@@ -440,24 +461,37 @@ class GaussianSplatting:
             loss += self.optimizer.l_smooth * loss_functions.l_smooth(nv_depth, edge_map)
         return loss, img_loss
 
-    def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], iterations: int, save_path: Optional[Path] = None, logger: Optional[CSVLogger] = None) -> float:
-
+    def verify(
+            self,
+            data_list: DataList,
+            data: Data,
+            iterations: int,
+            save_path: Optional[Path] = None,
+            logger: Optional[CSVLogger] = None
+    ) -> float:
         average_loss = 0.0
         print(f"Number gaussians: {self.num_points}")
         print(f"Culls: {self.culls}, Splits: {self.splits}, Clones: {self.clones}")
         print(
             f"Total(s):\nProject: {self.times[0]:.3f}, Rasterize: {self.times[1]:.3f}, Backward: {self.times[2]:.3f}"
         )
-        print(
-            f"Per step(s):\nProject: {self.times[0] / (iterations * len(data)):.5f}, Rasterize: {self.times[1] / (iterations * len(data)):.5f}, Backward: {self.times[2] / (iterations * len(data)):.5f}"
-        )
+        if iterations > 0 and len(data) > 0:
+            print(
+                f"Per step(s):\n"
+                f"Project: {self.times[0] / (iterations * len(data)):.5f}, "
+                f"Rasterize: {self.times[1] / (iterations * len(data)):.5f}, "
+                f"Backward: {self.times[2] / (iterations * len(data)):.5f}"
+            )
 
         if logger is not None:
             final_parameters = {
                 "n_gaussians": self.num_points,
                 "culls": self.culls,
                 "splits": self.splits,
-                "clones": self.clones
+                "clones": self.clones,
+                "project": self.times[0],
+                "rasterize": self.times[1],
+                "backwards": self.times[2]
             }
             logger.log_hparams(final_parameters)
 
@@ -465,12 +499,6 @@ class GaussianSplatting:
             final_loss = {}
             for name in data_list:
                 gt_view, camera, add_data = data[name]
-                gt_alpha = None
-                if "alpha" in add_data:
-                    gt_alpha = add_data["alpha"]
-                gt_depth = None
-                if "depth" in add_data:
-                    gt_depth = add_data["depth"]
                 bg_depth = 20.0
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]

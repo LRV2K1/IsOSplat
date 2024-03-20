@@ -1,12 +1,15 @@
 import time
+from typing import Optional
+
 import torch
 from torch import Tensor, optim, nn
 
 
 class Optimizer:
     def __init__(self, l_ssim: float = 0.2, l_depth: float = 0.1, l_smooth: float = 0.1):
-        self.optimizer: optim.Adam
-        
+        self.optimizer: Optional[optim.Adam] = None
+
+        self.lr = 0.1
         self.l_ssim = l_ssim
         self.l_depth = l_depth
         self.l_smooth = l_smooth

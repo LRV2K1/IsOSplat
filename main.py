@@ -26,7 +26,7 @@ def main(
         l_ssim: float = 0.2,
         l_depth: float = 0.1,
         l_smooth: float = 0.1,
-        edge_low: float = 0.5,
+        edge_low: float = 0.3,
         edge_high: float = 0.8
 ) -> float:
     logger = None
@@ -94,8 +94,17 @@ def main(
     return loss
 
 
-def preprocess(data_path: Optional[Path], cam_model: CamModel, initialize: Initialize, depth_model: DepthModel, no_alpha: bool, edge_low: float, edge_high: float, device: torch.device, logger: Optional[CSVLogger] = None
-               ) -> tuple[list[str], dict[str, any], PointCloud]:
+def preprocess(
+        data_path: Optional[Path],
+        cam_model: CamModel,
+        initialize: Initialize,
+        depth_model: DepthModel,
+        no_alpha: bool,
+        edge_low: float,
+        edge_high: float,
+        device: torch.device,
+        logger: Optional[CSVLogger] = None
+) -> tuple[list[str], dict[str, any], PointCloud]:
     preprocessor = PreProcessor(data_path)
     data_list, data, point_cloud = preprocessor.preprocess_data(
         device=device,
@@ -110,8 +119,19 @@ def preprocess(data_path: Optional[Path], cam_model: CamModel, initialize: Initi
     return data_list, data, point_cloud
 
 
-def train(data_list: list[str], data: dict[str, any], point_cloud: PointCloud, load_path: Optional[Path], lr: float, l_ssim: float, l_depth: float, l_smooth: float, iterations: int, splats: int, device: torch.device, logger: Optional[CSVLogger] = None
-          ) -> GaussianSplatting:
+def train(
+        data_list: list[str],
+        data: dict[str, any],
+        point_cloud: PointCloud,
+        load_path: Optional[Path],
+        lr: float, l_ssim: float,
+        l_depth: float,
+        l_smooth: float,
+        iterations: int,
+        splats: int,
+        device: torch.device,
+        logger: Optional[CSVLogger] = None
+) -> GaussianSplatting:
     trainer = GaussianSplatting(device)
 
     trainer.init_gaussians(splats, load_path, point_cloud, logger)
@@ -126,7 +146,14 @@ def train(data_list: list[str], data: dict[str, any], point_cloud: PointCloud, l
     return trainer
 
 
-def verify(trainer: GaussianSplatting, save_path: Optional[Path], data_list: list[str], data: dict[str, any], iterations: int, logger: Optional[CSVLogger] = None) -> float:
+def verify(
+        trainer: GaussianSplatting,
+        save_path: Optional[Path],
+        data_list: list[str],
+        data: dict[str, any],
+        iterations: int,
+        logger: Optional[CSVLogger] = None
+) -> float:
     loss = trainer.verify(
         data_list=data_list,
         data=data,
