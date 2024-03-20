@@ -1,9 +1,11 @@
 from pathlib import Path
 import os
 from enum import Enum
+from typing import Optional
 
 import torch
 from torch import Tensor
+from torchrl.record import CSVLogger
 
 from isosplat.camera import Camera
 from .depth_map_normilizer import PointCloud, DepthMapNormalizer
@@ -55,7 +57,8 @@ class PreProcessor:
             self, device: torch.device,
             initialize: Initialize = Initialize.Random, cam_model: CamModel = CamModel.NoCam,
             depth_model: DepthModel = DepthModel.NoDepth, no_alpha: bool = True,
-            edge_low: float = 0.5, edge_high: float = 0.8
+            edge_low: float = 0.5, edge_high: float = 0.8,
+            logger: Optional[CSVLogger] = None
                         ) -> tuple[list[str], dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], PointCloud]:
         
         if not self.has_img:
@@ -148,14 +151,17 @@ class PreProcessor:
                 data[name] = gt_image, camera, add_data
                 # save_img_from_tensor(edge_map, "edges", name)
 
+        depth_parameters = {}
         if depth_model == DepthModel.SFM:
             for sfm_image in sfm_images.values():
                 name = sfm_image.name.split('.')[0]
                 gt_image, camera, add_data = data[name]
 
                 npy_depth_map = load_depth_map(self.depth_path / f"{name}_pred.npy")
-                depth_map = depth_map_normalizer.normalize_depth_map(name, npy_depth_map,
+                depth_map, s, t = depth_map_normalizer.normalize_depth_map(name, npy_depth_map,
                     pid, point_cloud, sfm_image, camera, device)
+                depth_parameters[f"depth scale (s): {name}"] = s
+                depth_parameters[f"depth offset (t): {name}"] = t
                 
                 add_data["depth"] = depth_map
                 add_data["bg_depth"] = torch.max(depth_map).item() + 10
@@ -165,11 +171,16 @@ class PreProcessor:
                 gt_image, camera, add_data = data[name]
 
                 npy_depth_map = load_depth_map(self.depth_path / f"{name}_pred.npy")
-                depth_map = depth_map_normalizer.normalize_depth_map_file(name, npy_depth_map, self.depth_file_path, device)
+                depth_map, s, t = depth_map_normalizer.normalize_depth_map_file(name, npy_depth_map, self.depth_file_path, device)
+                depth_parameters[f"depth scale (s): {name}"] = s
+                depth_parameters[f"depth offset (t): {name}"] = t
 
                 add_data["depth"] = depth_map
                 add_data["bg_depth"] = torch.max(depth_map).item() + 10
                 data[name] = gt_image, camera, add_data
+
+        if logger is not None:
+            logger.log_hparams(depth_parameters)
 
         if initialize == Initialize.Random:
             return data_list, data, None

@@ -13,7 +13,7 @@ from preprocess.colmap_loader import Image
 PointCloud = NewType('PointCloud', tuple[np.ndarray, np.ndarray, np.ndarray])
 
 class DepthMapNormalizer:
-    def normalize_depth_map(self, name: str, depth_map: np.ndarray, point_cloud_id: dict[int, int], point_cloud: PointCloud, image: Image, camera: Camera, device: torch.device) -> Tensor:
+    def normalize_depth_map(self, name: str, depth_map: np.ndarray, point_cloud_id: dict[int, int], point_cloud: PointCloud, image: Image, camera: Camera, device: torch.device) -> tuple[Tensor, float, float]:
         print(f"Normalizing depth map {name}")
         depth_map = torch.tensor(np.float32(depth_map), device=device)
         
@@ -45,7 +45,7 @@ class DepthMapNormalizer:
         dense_depths = torch.tensor(dense_list, device=device)
 
         s, t = self._argmin(sparse_depths, dense_depths, device)
-        return s * depth_map + t
+        return s * depth_map + t, s, t
 
     def _argmin_old(self, sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
         sparse_depths.requires_grad = False
@@ -85,7 +85,7 @@ class DepthMapNormalizer:
 
         return x[0,0].item(), x[1,0].item()
 
-    def normalize_depth_map_file(self, name: str, depth_map: np.ndarray, depth_file_path: Path, device: torch.device) -> Tensor:
+    def normalize_depth_map_file(self, name: str, depth_map: np.ndarray, depth_file_path: Path, device: torch.device) -> tuple[Tensor, float, float]:
         print(f"Normalizing depth map {name}")
         depth_map = torch.tensor(np.float32(depth_map), device=device)
 
@@ -95,7 +95,7 @@ class DepthMapNormalizer:
         scale_offsets = json.loads(data)
         s, t = scale_offsets[name]
 
-        return s * depth_map + t
+        return s * depth_map + t, s, t
 
 
 def _get_depths(view_matrix: Tensor, means: Tensor) -> Tensor:

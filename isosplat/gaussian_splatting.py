@@ -14,6 +14,7 @@ import isosplat.utils as utils
 
 import torch
 from torch import Tensor
+from torchrl.record import CSVLogger
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
 from isosplat import spherical_harmonics
@@ -48,9 +49,7 @@ class GaussianSplatting:
         self.splits = 0
         self.clones = 0
         self.culls = 0
-
-        self.l_ssim = 0.2
-        self.l_depth = 1.0
+        self.times = [0] * 3
 
     def init_axis(self, add_axis: bool = False):
         means = torch.tensor(
@@ -107,7 +106,7 @@ class GaussianSplatting:
             self.sh_degree = 0
             self.num_points = 7
 
-    def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None):
+    def init_gaussians(self, splats: int, load_path: Optional[Path] = None, point_cloud: Optional[PointCloud] = None, logger: Optional[CSVLogger] = None):
         if load_path:
             print("Loading existing gaussians")
             self.means = torch.load(load_path / "means.pt")
@@ -174,6 +173,8 @@ class GaussianSplatting:
             )
             self.sh_degree = 0
         print(f"Initialized {self.num_points} gaussians")
+        if logger is not None:
+            logger.log_scalar("n_gaussians", self.num_points)
 
     def init_optimizer(self, lr: float, l_ssim: float = 0.2, l_depth: float = 0.1, l_smooth: float = 0.1):
         optimize_tensors = {
@@ -209,12 +210,12 @@ class GaussianSplatting:
     def _add_sh_band(self, itr: int) -> bool:
         return itr % 1000 == 0 and self.sh_degree < 4 and itr > 0
 
-    def train(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], iterations: int = 200):
-        times = [0] * 3
-
+    def train(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], iterations: int = 200, logger: Optional[CSVLogger] = None):
         n_data = len(data)
 
         for itr in range(iterations):
+            average_image_loss = 0
+            average_loss= 0
             data_itr = 0
             if self._is_reset_iteration(itr, iterations):
                 self._reset_opacity()
@@ -229,12 +230,14 @@ class GaussianSplatting:
                     bg_depth = add_data["bg_depth"]
                 
                 nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera, background_depth=bg_depth)
-                loss, _ = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
+                loss, image_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
                 t2 = self.optimizer.back_propagate_loss(loss)
+                average_image_loss += image_loss
+                average_loss += loss.item()
 
-                times[0] += t0
-                times[1] += t1
-                times[2] += t2
+                self.times[0] += t0
+                self.times[1] += t1
+                self.times[2] += t2
 
                 self.add_densification_states()
 
@@ -242,16 +245,16 @@ class GaussianSplatting:
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):
-                self._densify_and_prune(0.0002, 0.005, 2, self.optimizer.get_learning_rate())
-
-        print(f"Number gaussians: {self.num_points}")
-        print(f"Culls: {self.culls}, Splits: {self.splits}, Clones: {self.clones}")
-        print(
-            f"Total(s):\nProject: {times[0]:.3f}, Rasterize: {times[1]:.3f}, Backward: {times[2]:.3f}"
-        )
-        print(
-            f"Per step(s):\nProject: {times[0] / (iterations * len(data)):.5f}, Rasterize: {times[1] / (iterations * len(data)):.5f}, Backward: {times[2] / (iterations * len(data)):.5f}"
-        )
+                culls, clones, splits = self._densify_and_prune(0.0002, 0.005, 2, self.optimizer.get_learning_rate())
+                if logger is not None:
+                    logger.log_scalar("culls", culls, itr)
+                    logger.log_scalar("splits", splits, itr)
+                    logger.log_scalar("clones", clones, itr)
+                    logger.log_scalar("n_gaussians", self.num_points, itr)
+            average_image_loss /= n_data
+            if logger is not None:
+                logger.log_scalar("average_image_loss", average_image_loss, itr)
+                logger.log_scalar("average_loss", average_loss, itr)
 
     def save(self, save_path: Path):
         if not os.path.exists(save_path):
@@ -325,25 +328,27 @@ class GaussianSplatting:
             out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, background_depth, color)
             return out_img, out_depth, t0, t1
 
-    def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float):
+    def _densify_and_prune(self, grad_threshold: float, opacity_threshold: float, size_threshold: float, extend: float) -> tuple[int, int, int]:
         grads = self.acc_grad / self.denom
         grads[grads.isnan()] = 0.0
         
-        self._clone(grads, grad_threshold, size_threshold, extend)
-        self._split(grads, grad_threshold, size_threshold, extend)
+        clones = self._clone(grads, grad_threshold, size_threshold, extend)
+        splits = self._split(grads, grad_threshold, size_threshold, extend)
 
         opacity_threshold = utils.inverse_sigmoid(opacity_threshold)
         mask = (self.opacities <= opacity_threshold).squeeze()
         cur_points = self.num_points
         self._update_tensors(self.optimizer.prune_optimizer(~mask))
-        self.culls += cur_points - self.num_points
+        culls = cur_points - self.num_points
+        self.culls += culls
 
         self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
         self.denom = torch.zeros(self.num_points, 1, dtype=int, device= self.device)
 
         torch.cuda.empty_cache()
+        return culls, clones, splits
 
-    def _split(self, grads: Tensor, grad_threshold: float, size_threshold: float, extend: float):
+    def _split(self, grads: Tensor, grad_threshold: float, size_threshold: float, extend: float) -> int:
         # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         padded_grads = torch.zeros(self.num_points - grads.shape[0], grads.shape[1], device=self.device)
         padded_grads = torch.cat((grads, padded_grads))
@@ -374,9 +379,11 @@ class GaussianSplatting:
 
         self.optimizer.prune_optimizer(~mask)
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
-        self.splits += int(new_opacities.shape[0]/2)
+        splits = int(new_opacities.shape[0]/2)
+        self.splits += splits
+        return splits
 
-    def _clone(self, grads: Tensor,  grad_threshold: float, size_threshold: float, extend: float):
+    def _clone(self, grads: Tensor,  grad_threshold: float, size_threshold: float, extend: float) -> int:
         # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
         # mask = torch.where(torch.norm(view_space_gradients, dim=-1) > grad_threshold, True, False)
         mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
@@ -397,7 +404,9 @@ class GaussianSplatting:
             'quats': new_quats
         }
         self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
-        self.clones += new_opacities.shape[0]
+        clones = new_opacities.shape[0]
+        self.clones += clones
+        return clones
 
     def add_densification_states(self):
         view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
@@ -431,10 +440,29 @@ class GaussianSplatting:
             loss += self.optimizer.l_smooth * loss_functions.l_smooth(nv_depth, edge_map)
         return loss, img_loss
 
-    def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], save_path: Optional[Path] = None) -> float:
+    def verify(self, data_list: list[str], data: dict[str, tuple[Tensor, Camera, dict[str, Tensor]]], iterations: int, save_path: Optional[Path] = None, logger: Optional[CSVLogger] = None) -> float:
 
         average_loss = 0.0
+        print(f"Number gaussians: {self.num_points}")
+        print(f"Culls: {self.culls}, Splits: {self.splits}, Clones: {self.clones}")
+        print(
+            f"Total(s):\nProject: {self.times[0]:.3f}, Rasterize: {self.times[1]:.3f}, Backward: {self.times[2]:.3f}"
+        )
+        print(
+            f"Per step(s):\nProject: {self.times[0] / (iterations * len(data)):.5f}, Rasterize: {self.times[1] / (iterations * len(data)):.5f}, Backward: {self.times[2] / (iterations * len(data)):.5f}"
+        )
+
+        if logger is not None:
+            final_parameters = {
+                "n_gaussians": self.num_points,
+                "culls": self.culls,
+                "splits": self.splits,
+                "clones": self.clones
+            }
+            logger.log_hparams(final_parameters)
+
         with torch.no_grad():
+            final_loss = {}
             for name in data_list:
                 gt_view, camera, add_data = data[name]
                 gt_alpha = None
@@ -453,6 +481,9 @@ class GaussianSplatting:
                 average_loss += img_loss
                 print(f"Image: {name}, Loss:{loss.item()}")
                 print(f"Image: {name}, Img_Loss:{img_loss}")
+                if logger is not None:
+                    final_loss[f"loss: {name}"] = loss.item()
+                    final_loss[f"image loss: {name}"] = img_loss
                 if save_path:
                     if not os.path.exists(save_path):
                         os.makedirs(save_path)
@@ -469,4 +500,6 @@ class GaussianSplatting:
 
                     depth_image = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
                     depth_image.save(f"{save_path}/{name}_depth.png")
+            if logger is not None:
+                logger.log_hparams(final_loss)
         return average_loss / len(data_list)
