@@ -13,6 +13,7 @@ from torchrl.record import CSVLogger
 
 from .camera import Camera
 from .optimizer import Optimizer
+from .optimization_params import OptimizationParams
 import isosplat.loss_functions as loss_functions
 import isosplat.utils as utils
 from isosplat.utils import PointCloud, DataList, Data
@@ -40,6 +41,7 @@ class GaussianSplatting:
         self.denom: Optional[Tensor] = None
         self.sh_degree: int = 0
 
+        self.optimzable_params: OptimizationParams = OptimizationParams()
         self.optimizer: Optional[Optimizer] = None
 
         self.splits = 0
@@ -178,17 +180,24 @@ class GaussianSplatting:
         if logger is not None:
             logger.log_scalar("n_gaussians", self.num_points)
 
-    def init_optimizer(self, lr: float, l_ssim: float = 0.2, l_depth: float = 0.1, l_smooth: float = 0.1):
+    def init_optimizer(self, optimizable_params: OptimizationParams):
+        self.optimzable_params = optimizable_params
+        
         optimize_tensors = {
-            'sh_coeffs': self.sh_coeffs,
-            'means': self.means,
-            'scales': self.scales,
-            'opacities': self.opacities,
-            'quats': self.quats
+            'sh_coeffs': (self.sh_coeffs, self.optimzable_params.sh_lr),
+            'means': (self.means, self.optimzable_params.position_lr_init),
+            'scales': (self.scales, self.optimzable_params.scaling_lr),
+            'opacities': (self.opacities, self.optimzable_params.opacity_lr),
+            'quats': (self.quats, self.optimzable_params.rotation_lr)
         }
 
-        self.optimizer = Optimizer(l_ssim, l_depth, l_smooth)
-        self._update_tensors(self.optimizer.load_tensor_dict(optimize_tensors, lr))
+        self.optimizer = Optimizer()
+        self._update_tensors(self.optimizer.load_tensor_dict(optimize_tensors))
+        self.optimizer.set_learning_rate_scheduler(
+            self.optimzable_params.position_lr_init, 
+            self.optimzable_params.position_lr_final, 
+            self.optimzable_params.position_lr_delay_mult, 
+            self.optimzable_params.position_lr_max_steps)
 
     def _update_tensors(self, new_tensors: dict[str, Tensor]):
         if "sh_coeffs" in new_tensors:
@@ -204,22 +213,27 @@ class GaussianSplatting:
         self.num_points = self.opacities.shape[0]
 
     def _is_refinement_iteration(self, itr: int) -> bool:
-        return itr % 100 == 0 and itr > 0
+        return itr % self.optimzable_params.densification_interval == 0 and \
+                itr >= self.optimzable_params.densify_from_iter and \
+                itr <= self.optimzable_params.densify_until_iter
 
-    def _is_reset_iteration(self, itr: int, iterations: int) -> bool:
-        return itr % 3000 == 0 and iterations - itr >= 1000 and itr > 0
+    def _is_reset_iteration(self, itr: int) -> bool:
+        return itr % self.optimzable_params.opacity_reset_interval == 0 and \
+                self.optimzable_params.iterations - itr >= 1000 and itr > 0
 
     def _add_sh_band(self, itr: int) -> bool:
         return itr % 1000 == 0 and self.sh_degree < 4 and itr > 0
 
-    def train(self, data_list: DataList, data: Data, iterations: int = 200, logger: Optional[CSVLogger] = None):
-        n_data = len(data)
+    def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None):
+        n_data = len(data_list)
+        iterations = self.optimzable_params.iterations
 
         for itr in range(iterations):
             average_image_loss = 0
             average_loss = 0
             data_itr = 0
-            if self._is_reset_iteration(itr, iterations):
+            lr = self.optimizer.update_learning_rate(itr)
+            if self._is_reset_iteration(itr):
                 self._reset_opacity()
             if self._add_sh_band(itr):
                 self.sh_degree += 1
@@ -247,7 +261,7 @@ class GaussianSplatting:
                 data_itr += 1
             
             if self._is_refinement_iteration(itr):
-                culls, clones, splits = self._densify_and_prune(0.0002, 0.005, 2, self.optimizer.get_learning_rate())
+                culls, clones, splits = self._densify_and_prune(self.optimzable_params.densify_grad_threshold, 0.005, 2, lr)
                 if logger is not None:
                     logger.log_scalar("culls", culls, itr)
                     logger.log_scalar("splits", splits, itr)
@@ -442,20 +456,19 @@ class GaussianSplatting:
         self._update_tensors(self.optimizer.replace_optimizer_tensor(new_opacities, "opacities"))
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
-        loss = (1.0 - self.optimizer.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) \
-            + self.optimizer.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
+        loss = (1.0 - self.optimzable_params.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) \
+            + self.optimzable_params.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
         img_loss = loss.item()
         if "depth" in add_data and nv_depth is not None:
-            loss += self.optimizer.l_depth * loss_functions.l1_loss(nv_depth, add_data["depth"])
+            loss += self.optimzable_params.l_depth * loss_functions.l1_loss(nv_depth, add_data["depth"])
         if "edges" in add_data and nv_depth is not None:
-            loss += self.optimizer.l_smooth * loss_functions.l_smooth(nv_depth, add_data["edges"])
+            loss += self.optimzable_params.l_smooth * loss_functions.l_smooth(nv_depth, add_data["edges"])
         return loss, img_loss
 
     def verify(
             self,
             data_list: DataList,
             data: Data,
-            iterations: int,
             save_path: Optional[Path] = None,
             logger: Optional[CSVLogger] = None
     ) -> float:
@@ -465,6 +478,7 @@ class GaussianSplatting:
         print(
             f"Total(s):\nProject: {self.times[0]:.3f}, Rasterize: {self.times[1]:.3f}, Backward: {self.times[2]:.3f}"
         )
+        iterations = self.optimzable_params.iterations
         if iterations > 0 and len(data) > 0:
             print(
                 f"Per step(s):\n"

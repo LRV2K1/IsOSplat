@@ -4,29 +4,25 @@ from typing import Optional
 import torch
 from torch import Tensor, optim, nn
 
+from .utils import get_expon_lr_func
+
 
 class Optimizer:
-    def __init__(self, l_ssim: float = 0.2, l_depth: float = 0.1, l_smooth: float = 0.1):
+    def __init__(self):
         self.optimizer: Optional[optim.Adam] = None
 
-        self.lr = 0.1
-        self.l_ssim = l_ssim
-        self.l_depth = l_depth
-        self.l_smooth = l_smooth
-
-    def load_tensor_dict(self, tensor_dict: dict[str, Tensor], lr: float = 0.01) -> dict[str, Tensor]:
+    def load_tensor_dict(self, tensor_dict: dict[str, Tensor]) -> dict[str, Tensor]:
         optimizer_params = []
         optimizable_tensors = {}
         for key in tensor_dict:
-            tensor = tensor_dict[key]
+            tensor, lr = tensor_dict[key]
             tensor.requires_grad = True
             optimizer_params.append(
-                {'params': tensor, 'name': key}
+                {'params': tensor, 'lr': lr, 'name': key}
             )
             optimizable_tensors[key] = tensor
 
-        self.lr = lr
-        self.optimizer = optim.Adam(optimizer_params, lr)
+        self.optimizer = optim.Adam(optimizer_params, lr=0.0, eps=1e-15)
         return optimizable_tensors
 
     def back_propagate_loss(self, loss: Tensor) -> float:
@@ -40,12 +36,18 @@ class Optimizer:
 
         self.optimizer.step()
         return t2
+    
+    def set_learning_rate_scheduler(self, init_lr: float, final_lr: float, lr_delay_mult: float, lr_max_steps: int):
+        self.mean_lr_sheduler = get_expon_lr_func(lr_init=init_lr,
+                                                    lr_final=final_lr,
+                                                    lr_delay_mult=lr_delay_mult,
+                                                    max_steps=lr_max_steps)
 
-    def update_learning_rate(self, lr: float, name: str):
+    def update_learning_rate(self, itr: int) -> float:
         for param_group in self.optimizer.param_groups:
-            if param_group["name"] == name:
+            if param_group["name"] == "means":
+                lr = self.mean_lr_sheduler(itr)
                 param_group['lr'] = lr
-                self.lr = lr
                 return lr
             
     def get_learning_rate(self):
