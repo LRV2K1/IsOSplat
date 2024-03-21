@@ -35,7 +35,8 @@ class GaussianSplatting:
         self.means: Optional[Tensor] = None
         self.scales: Optional[Tensor] = None
         self.opacities: Optional[Tensor] = None
-        self.sh_coeffs: Optional[Tensor] = None
+        self.sh_base_coeffs: Optional[Tensor] = None
+        self.sh_rest_coeffs: Optional[Tensor] = None
         self.quats: Optional[Tensor] = None
         self.acc_grad: Optional[Tensor] = None
         self.denom: Optional[Tensor] = None
@@ -62,8 +63,8 @@ class GaussianSplatting:
         )
         scales = torch.ones(self.num_points, 3, device=self.device) * 0.1
         opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
-        sh_coeffs = torch.zeros(7, 25, 3, device=self.device)
-        sh_coeffs[:, 0, :] = torch.tensor(
+        sh_base_coeffs = torch.zeros(7, 1, 3, device=self.device)
+        sh_base_coeffs[:, 0, :] = torch.tensor(
             [
                 [-10.0, -10.0, -10.0],
                 [10.0, -10.0, -10.0],
@@ -75,6 +76,7 @@ class GaussianSplatting:
             ],
             device=self.device
         )
+        sh_rest_coeffs = torch.zeros(7, 24, 3, device=self.device)
         u = torch.rand(self.num_points, 1, device=self.device)
         v = torch.rand(self.num_points, 1, device=self.device)
         w = torch.rand(self.num_points, 1, device=self.device)
@@ -92,14 +94,16 @@ class GaussianSplatting:
             self.means = torch.cat((self.means, means), 0)
             self.scales = torch.cat((self.scales, scales), 0)
             self.opacities = torch.cat((self.opacities, opacities), 0)
-            self.sh_coeffs = torch.cat((self.sh_coeffs, sh_coeffs), 0)
+            self.sh_base_coeffs = torch.cat((self.sh_base_coeffs, sh_base_coeffs), 0)
+            self.sh_rest_coeffs = torch.cat((self.sh_rest_coeffs, sh_rest_coeffs), 0)
             self.quats = torch.cat((self.quats, quats), 0)
             self.num_points += 7
         else:
             self.means = means
             self.scales = scales
             self.opacities = opacities
-            self.sh_coeffs = sh_coeffs
+            self.sh_base_coeffs = sh_base_coeffs
+            self.sh_rest_coeffs = sh_rest_coeffs
             self.quats = quats
             self.sh_degree = 0
             self.num_points = 7
@@ -116,7 +120,9 @@ class GaussianSplatting:
             self.means = torch.load(load_path / "means.pt")
             self.scales = torch.load(load_path / "scales.pt")
             self.opacities = torch.load(load_path / "opacities.pt")
-            self.sh_coeffs = torch.load(load_path / "sh.pt")
+            sh_coeffs = torch.load(load_path / "sh.pt")
+            self.sh_base_coeffs = sh_coeffs[:, 0:1, :]
+            self.sh_rest_coeffs = sh_coeffs[:, 1:, :]
             self.quats = torch.load(load_path / "quats.pt")
             self.acc_grad = torch.load(load_path / "acc_grad.pt")
             self.denom = torch.load(load_path / "denom.pt")
@@ -134,8 +140,9 @@ class GaussianSplatting:
             self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
 
             colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs/256), device=self.device))
-            self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
-            self.sh_coeffs[:, 0, :] = colors
+            self.sh_base_coeffs = torch.zeros(self.num_points, 1, 3, device=self.device)
+            self.sh_base_coeffs[:, 0, :] = colors
+            self.sh_rest_coeffs = torch.rand(self.num_points, 24, 3, device=self.device)
             self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
             self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
 
@@ -159,7 +166,8 @@ class GaussianSplatting:
             self.means = 2 * (torch.rand(self.num_points, 3, device=self.device) - 0.5)
             self.scales = torch.rand(self.num_points, 3, device=self.device)
             self.opacities = torch.ones((self.num_points, 1), device=self.device)
-            self.sh_coeffs = torch.rand(self.num_points, 25, 3, device=self.device)
+            self.sh_base_coeffs = torch.rand(self.num_points, 1, 3, device=self.device)
+            self.sh_rest_coeffs = torch.rand(self.num_points, 24, 3, device=self.device)
             self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
             self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
 
@@ -184,7 +192,8 @@ class GaussianSplatting:
         self.optimzable_params = optimizable_params
         
         optimize_tensors = {
-            'sh_coeffs': (self.sh_coeffs, self.optimzable_params.sh_lr),
+            'sh_base_coeffs': (self.sh_base_coeffs, self.optimzable_params.sh_lr),
+            'sh_rest_coeffs': (self.sh_rest_coeffs, self.optimzable_params.sh_lr / 20.0),
             'means': (self.means, self.optimzable_params.position_lr_init),
             'scales': (self.scales, self.optimzable_params.scaling_lr),
             'opacities': (self.opacities, self.optimzable_params.opacity_lr),
@@ -200,8 +209,10 @@ class GaussianSplatting:
             self.optimzable_params.position_lr_max_steps)
 
     def _update_tensors(self, new_tensors: dict[str, Tensor]):
-        if "sh_coeffs" in new_tensors:
-            self.sh_coeffs = new_tensors["sh_coeffs"]
+        if "sh_base_coeffs" in new_tensors:
+            self.sh_base_coeffs = new_tensors["sh_base_coeffs"]
+        if "sh_rest_coeffs" in new_tensors:
+            self.sh_rest_coeffs = new_tensors["sh_rest_coeffs"]
         if "means" in new_tensors:
             self.means = new_tensors["means"]
         if "scales" in new_tensors:
@@ -276,13 +287,17 @@ class GaussianSplatting:
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-        torch.save(self.sh_coeffs, f"{save_path}/sh.pt")
+        sh_coeffs = self._combine_sh_coeffs()
+        torch.save(sh_coeffs, f"{save_path}/sh.pt")
         torch.save(self.means, f"{save_path}/means.pt")
         torch.save(self.scales, f"{save_path}/scales.pt")
         torch.save(self.opacities, f"{save_path}/opacities.pt")
         torch.save(self.quats, f"{save_path}/quats.pt")
         torch.save(self.acc_grad, f"{save_path}/acc_grad.pt")
         torch.save(self.denom, f"{save_path}/denom.pt")
+
+    def _combine_sh_coeffs(self) -> Tensor:
+        return torch.cat((self.sh_base_coeffs, self.sh_rest_coeffs), 1)
 
     def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
         view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
@@ -331,7 +346,7 @@ class GaussianSplatting:
             radii,
             conics,
             num_tiles_hit,
-            torch.sigmoid(self._calculate_sh_color(self.sh_degree, camera, self.sh_coeffs)),
+            torch.sigmoid(self._calculate_sh_color(self.sh_degree, camera, self._combine_sh_coeffs())),
             torch.sigmoid(self.opacities),
             height,
             width,
@@ -400,11 +415,13 @@ class GaussianSplatting:
         new_means = ((self.means[mask]).repeat(2, 1)) + (padded_grad * extend)
         new_scales = ((self.scales[mask]).repeat(2, 1)) / 1.6
         new_quats = (self.quats[mask]).repeat(2, 1)
-        new_sh_coeffs = (self.sh_coeffs[mask]).repeat(2, 1, 1)
+        new_sh_base_coeffs = (self.sh_base_coeffs[mask]).repeat(2, 1, 1)
+        new_sh_rest_coeffs = (self.sh_rest_coeffs[mask]).repeat(2, 1, 1)
         new_opacities = (self.opacities[mask]).repeat(2, 1)
 
         optimize_tensors = {
-            'sh_coeffs': new_sh_coeffs,
+            'sh_base_coeffs': new_sh_base_coeffs,
+            'sh_rest_coeffs': new_sh_rest_coeffs,
             'means': new_means,
             'scales': new_scales,
             'opacities': new_opacities,
@@ -427,11 +444,13 @@ class GaussianSplatting:
         new_means = self.means[mask] + (positional_gradient * extend)
         new_scales = self.scales[mask]
         new_quats = self.quats[mask]
-        new_sh_coeffs = self.sh_coeffs[mask]
+        new_sh_base_coeffs = self.sh_base_coeffs[mask]
+        new_sh_rest_coeffs = self.sh_rest_coeffs[mask]
         new_opacities = self.opacities[mask]
 
         optimize_tensors = {
-            'sh_coeffs': new_sh_coeffs,
+            'sh_base_coeffs': new_sh_base_coeffs,
+            'sh_rest_coeffs': new_sh_rest_coeffs,
             'means': new_means,
             'scales': new_scales,
             'opacities': new_opacities,
