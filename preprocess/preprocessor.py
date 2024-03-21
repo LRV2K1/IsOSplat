@@ -63,7 +63,7 @@ class PreProcessor:
             edge_low: float = 0.3,
             edge_high: float = 0.8,
             logger: Optional[CSVLogger] = None
-    ) -> tuple[DataList, Data, PointCloud]:
+    ) -> tuple[DataList, Data, Optional[PointCloud]]:
         
         if not self.has_img:
             print(f"No image file found or given, generating dummy data")

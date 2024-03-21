@@ -442,23 +442,13 @@ class GaussianSplatting:
         self._update_tensors(self.optimizer.replace_optimizer_tensor(new_opacities, "opacities"))
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
-        gt_alpha = None
-        if "alpha" in add_data:
-            gt_alpha = add_data["alpha"]
-        gt_depth = None
-        if "depth" in add_data:
-            gt_depth = add_data["depth"]
-        edge_map = None
-        if "edges" in add_data:
-            edge_map = add_data["edges"]
-
         loss = (1.0 - self.optimizer.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) \
             + self.optimizer.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
         img_loss = loss.item()
-        if gt_depth is not None and nv_depth is not None:
-            loss += self.optimizer.l_depth * loss_functions.l1_loss(nv_depth, gt_depth)
-        if edge_map is not None and nv_depth is not None:
-            loss += self.optimizer.l_smooth * loss_functions.l_smooth(nv_depth, edge_map)
+        if "depth" in add_data and nv_depth is not None:
+            loss += self.optimizer.l_depth * loss_functions.l1_loss(nv_depth, add_data["depth"])
+        if "edges" in add_data and nv_depth is not None:
+            loss += self.optimizer.l_smooth * loss_functions.l_smooth(nv_depth, add_data["edges"])
         return loss, img_loss
 
     def verify(
