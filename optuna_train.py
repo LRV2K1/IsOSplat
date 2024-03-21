@@ -3,6 +3,7 @@ from typing import Optional
 import threading
 import time
 import os
+import json
 
 import tyro
 import torch
@@ -10,131 +11,88 @@ from torchrl.record import CSVLogger
 import optuna
 
 import main
-from preprocess.preprocessor import Initialize, CamModel, DepthModel
+from isosplat.optimization_params import OptimizationParams
+from preprocess.preprocess_params import PreProcessParams
 
 
 class OptunaStudy:     
     def __init__(
-            self, 
+            self,
+            train_param_path: Path, 
             study_name: str, 
             data_path: Path, 
             log_path: Optional[Path] = None, 
             
-            iterations: int = 1000, 
-            lr: Optional[float] = None,
-            l_ssim: Optional[float] = None,
-            l_depth: Optional[float] = None,
-            l_smooth: Optional[float] = None,
-            edge_low: Optional[float] = None,
-            edge_high: Optional[float] = None
+            opt_param_path: Optional[Path] = None,
+            pre_param_path: Optional[Path] = None,
     ):
+        self.device = torch.device("cuda:0")
+
         self.study_name = study_name
         self.data_path = data_path
         self.log_path = log_path
 
-        self.initialize = edge_low is not None or edge_high is not None
-        self.device = torch.device("cuda:0")
+        self.preprocess_params = PreProcessParams()
+        if pre_param_path is not None:
+            self.preprocess_params.load_json(pre_param_path)
+        self.optimizable_params = OptimizationParams()
+        if opt_param_path is not None:
+            self.optimizable_params.load_json(opt_param_path)
 
-        self.iterations = iterations
-        self.lr = lr
-        self.l_ssim = l_ssim
-        self.l_depth = l_depth
-        self.l_smooth = l_smooth
-        self.edge_low = edge_low
-        self.edge_high = edge_high
+        with open(train_param_path) as f:
+            params = f.read()
+        self.train_params = json.loads(params)
 
-        if not self.initialize:
-            self._initialize()
-
-    def _initialize(self, trial) -> tuple[float, float]:
-        self.logger = None
+    def objective(self, trial):
+        logger = None
         if self.log_path is not None:
             start_time = time.time()
-            path_name = "test"
+            path_name = trial.number
             if self.data_path is not None:
                 path_name = os.path.basename(self.data_path)
-            log_name = f"{self.study_name} - {path_name} - {self.iterations} - {start_time}"
-            self.logger = CSVLogger(log_dir=self.log_path, exp_name=log_name)
+            log_name = f"{self.study_name} - {path_name} - {self.optimizable_params.iterations} - {start_time}"
+            logger = CSVLogger(log_dir=self.log_path, exp_name=log_name)
 
-        edge_low = self.edge_low
-        edge_high = self.edge_high
-        if edge_low is None:
-            if edge_high is not None:
-                edge_low = trial.suggest_float("edge_low", 0.01, min(edge_high, 1.0))
-            else:
-                edge_low = trial.suggest_float("edge_low", 0.01, 1.0)
-        if edge_high is None:
-            edge_high = trial.suggest_float("edge_high", edge_low, 1.5)
+        opt_parameters = self.optimizable_params.get_param_dictionary()
+        pre_parameters = self.preprocess_params.get_param_dictionary()
+        new_opt_parameters = {}
+        new_pre_parameters = {}
+        for key in self.train_params:
+            mi, ma = self.train_params[key]
+            x = trial.suggest_float(key, mi, ma)
+            if key in opt_parameters:
+                new_opt_parameters[key] = x
+            if key in pre_parameters:
+                new_pre_parameters[key] = x
+        self.optimizable_params.load_dictionary(new_opt_parameters)
+        self.preprocess_params.load_dictionary(new_opt_parameters)
+
+        if logger is not None:
+            logger.log_hparams(self.optimizable_params.get_param_dictionary())
+            logger.log_hparams(self.preprocess_params.get_param_dictionary())
 
         data_list, data, point_cloud = main.preprocess(
             data_path=self.data_path,
-            cam_model=CamModel.SFM,
-            initialize=Initialize.SFM,
-            depth_model=DepthModel.SFM,
-            no_alpha=True,
-            edge_low=edge_low,
-            edge_high=edge_high,
+            preprocess_params=self.preprocess_params,
             device=self.device,
-            logger=self.logger)
+            logger=logger)
 
-        self.data_list = data_list
-        self.data = data
-        self.point_cloud = point_cloud
-
-        return edge_low, edge_high
-
-    def objective(self, trial):
-        edge_low = self.edge_low
-        edge_high = self.edge_high        
-        if self.initialize:
-            edge_low, edge_high = self._initialize(trial)
-
-        lr = self.lr
-        if lr is None:
-            lr = trial.suggest_float("lr", 0.001, 0.1)
-        l_ssim = self.l_ssim
-        if l_ssim is None:
-            l_ssim = trial.suggest_float("l_ssim", 0.001, 0.1)
-        l_depth = self.l_depth
-        if l_depth is None:
-            l_depth = trial.suggest_float("l_depth", 0.0001, 0.25)
-        l_smooth = self.l_smooth
-        if l_smooth is None:
-            l_smooth = trial.suggest_float("l_smooth", 0.0001, 0.25)
-
-        if self.logger is not None:
-            hyperparameters = {
-                "lr": lr,
-                "l_ssim": l_ssim,
-                "l_depth": l_depth,
-                "l_smooth": l_smooth,
-                "edge_low": edge_low,
-                "edge_high": edge_high,
-                "iterations": self.iterations
-            }
-            self.logger.log_hparams(hyperparameters)
-
-        trainer = main.train(
-            data_list=self.data_list, 
-            data=self.data, 
-            point_cloud=self.point_cloud, 
+        self.trainer = main.train(
+            data_list=data_list, 
+            data=data, 
+            point_cloud=point_cloud, 
             load_path=None,
-            lr=lr,
-            l_ssim=l_ssim,
-            l_depth=l_depth,
-            l_smooth=l_smooth,
-            iterations=self.iterations,
-            splats=0,
+            optimization_params=self.optimizable_params,
+            splats=self.preprocess_params.splats,
             device=self.device,
-            logger=self.logger)
+            logger=logger)
         
         loss = main.verify(
-            trainer=trainer,
+            trainer=self.trainer,
             save_path=None,
-            data_list=self.data_list,
-            data=self.data,
-            iterations=self.iterations,
-            logger=self.logger)
+            data_list=data_list,
+            data=data,
+            logger=logger)
         return loss    
 
 
@@ -145,56 +103,43 @@ def objective(trial):
 
 
 def block(
+        train_param_path: Path,
         study_name: str,
         data_path: Path,
         study: optuna.Study,
         log_path: Optional[Path] = None,
         n_trials: int = 10,
-
-        iterations: int = 1000,
-        lr: Optional[float] = None,
-        l_ssim: Optional[float] = None,
-        l_depth: Optional[float] = None,
-        l_smooth: Optional[float] = None,
-        edge_low: Optional[float] = None,
-        edge_high: Optional[float] = None
+        opt_param_path: Optional[Path] = None,
+        pre_param_path: Optional[Path] = None,
 ):
     optuna_study = OptunaStudy(
         study_name=study_name, 
         data_path=data_path, 
         log_path=log_path, 
-        iterations=iterations,
-        lr=lr,
-        l_ssim=l_ssim,
-        l_depth=l_depth,
-        l_smooth=l_smooth,
-        edge_low=edge_low,
-        edge_high=edge_high)
+        train_param_path=train_param_path,
+        opt_param_path=opt_param_path,
+        pre_param_path=pre_param_path)
     study.optimize(optuna_study.objective, n_trials=n_trials)
 
 
 def start(
+        train_param_path: Path,
         data_path: Optional[Path] = None,
         study_name: Optional[str] = None,
         storage_path: Path = "sqlite:///db.sqlite3",
         log_path: Optional[Path] = None,
+        opt_param_path: Optional[Path] = None,
+        pre_param_path: Optional[Path] = None,
+
         n_trials: int = 100,
         blocks: int = 1,
-
-        iterations: int = 1000,
-        lr: Optional[float] = None,
-        l_ssim: Optional[float] = None,
-        l_depth: Optional[float] = None,
-        l_smooth: Optional[float] = None,
-        edge_low: Optional[float] = None,
-        edge_high: Optional[float] = None
 ):
     studies = optuna.get_all_study_names(storage=storage_path)
 
     if study_name is None:
         study_name = "Test Study"
     if data_path is None:
-        optuna_study = OptunaStudy(data_path, storage_path, iterations)
+        optuna_study = OptunaStudy(data_path, storage_path, opt_param_path, pre_param_path, train_param_path)
         study.optimize(optuna_study.objective, n_trials=n_trials)
         study.optimize(objective, n_trials=100)
         print(f"Best value: {study.best_value} (params: {study.best_params})")
@@ -209,18 +154,14 @@ def start(
     for i in range(blocks):
         thread = threading.Thread(target=block, 
                                   args=(
+                                      train_param_path,
                                       study_name, 
                                       data_path, 
                                       study, 
                                       log_path, 
                                       n_trials, 
-                                      iterations,
-                                      lr,
-                                      l_ssim,
-                                      l_depth,
-                                      l_smooth,
-                                      edge_low,
-                                      edge_high))
+                                      opt_param_path, 
+                                      pre_param_path))
         thread.start()
         threads.append(thread)
 

@@ -110,7 +110,7 @@ def main(
         path_name = "test"
         if data_path is not None:
             path_name = os.path.basename(data_path)
-        log_name = f"{path_name} - {iterations} - {start_time}"
+        log_name = f"{path_name} - {optimization_params.iterations} - {start_time}"
         logger = CSVLogger(log_dir=log_path, exp_name=log_name)
         hyperparameters = {
             "data_path": data_path,

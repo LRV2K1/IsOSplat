@@ -156,6 +156,8 @@ class CV2CannyEdgeDetector:
     def __init__(self, threshold_low: float = 0.3, threshold_high: float = 0.8):
         self.threshold_low = threshold_low * 255
         self.threshold_high = threshold_high * 255
+        if self.threshold_high < self.threshold_low:
+            self.threshold_high = self.threshold_low
     
     def calculate_edge_map(self, name: str, img: Tensor, device: torch.device) -> Tensor:
         print(f"Calculate edge map {name}")
