@@ -1,17 +1,18 @@
-import torch
-import tyro
 from pathlib import Path
-from isosplat.gaussian_splatting import GaussianSplatting
-from isosplat.camera import Camera
 import math
-
-from tkinter import *
-from tkinter.ttk import *
-
-from torch import Tensor
-
+from typing import Optional
 from PIL import Image, ImageTk
 import numpy as np
+
+import tyro
+import torch
+from torch import Tensor
+
+import tkinter as tk
+import tkinter.ttk as ttk
+
+from isosplat.gaussian_splatting import GaussianSplatting
+from isosplat.camera import Camera
 
 
 class RendererThread:
@@ -24,8 +25,8 @@ class RendererThread:
             self.renderer.init_axis(True)
         print(f"Number rendered gaussians: {self.renderer.num_points}")
 
-        # self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
-        self.camera = Camera(400, 400, 480, 480, 200, 200, device)
+        self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
+        # self.camera = Camera(400, 400, 480, 480, 200, 200, device)
 
         self.anglh = 0.0
         self.anglv = 0.0
@@ -72,7 +73,7 @@ class RendererThread:
     def _update_camera(self):
         self.camera.orbit(self.x, self.y, self.z, self.dis, self.anglh, self.anglv)
 
-    def render(self, width: int, height: int) -> tuple[Image.Image, Image.Image]:
+    def render(self, width: int, height: int) -> tuple[Image, Image]:
         out_img, out_depth, _, _ = self.renderer.render(self.camera, self.size, self.depth, self.background)
         img = Image.fromarray((out_img.detach().cpu().numpy() * 255).astype(np.uint8))
 
@@ -88,11 +89,11 @@ class RendererThread:
 
 
 class Viewer:
-    def __init__(self, load_path: Path, axis: bool= False):
-        # self.width = 1200
-        self.width = 800
+    def __init__(self, load_path: Path, axis: bool = False):
+        self.width = 1200
+        # self.width = 800
         self.height = 800
-        self.root = Tk()
+        self.root = tk.Tk()
         self.root.title("IsOSplat")
         self.root.geometry(f"{self.width}x{self.height}")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -103,34 +104,34 @@ class Viewer:
         self.root.bind("<MouseWheel>", self._scroll)
         self.root.bind("<Key>", self.key_handler)
 
-        self.panel = Label(self.root)
+        self.panel = ttk.Label(self.root)
         self.panel.place(x=0, y=0)
 
-        self.slider = Scale(self.root, from_=0, to=1, orient=HORIZONTAL)
+        self.slider = ttk.Scale(self.root, from_=0, to=1, orient=tk.HORIZONTAL)
         self.slider.bind("<Enter>", self._enter_no_drag)
         self.slider.bind("<Leave>", self._leave_no_drag)
         self.slider.set(1.0)
         self.slider.place(x=10, y=10)
 
-        self.label = Label(self.root, text=f"{self.slider.get():.2f}")
+        self.label = ttk.Label(self.root, text=f"{self.slider.get():.2f}")
         self.label.place(x=120, y=15)
 
-        self.depth_slider = Scale(self.root, from_=0, to=100, orient=HORIZONTAL)
+        self.depth_slider = ttk.Scale(self.root, from_=0, to=100, orient=tk.HORIZONTAL)
         self.depth_slider.bind("<Enter>", self._enter_no_drag)
         self.depth_slider.bind("<Leave>", self._leave_no_drag)
         self.depth_slider.set(20.0)
         self.depth_slider.place(x=10, y=50)
 
-        self.depth_label = Label(self.root, text=f"{self.depth_slider.get():.2f}")
+        self.depth_label = ttk.Label(self.root, text=f"{self.depth_slider.get():.2f}")
         self.depth_label.place(x=120, y=55)
 
-        self.background_toggle = Button(self.root, text="Background", command=self._toggle_background)
-        self.background_toggle.place(relx=1, x=-10, y=10, anchor=NE)
+        self.background_toggle = ttk.Button(self.root, text="Background", command=self._toggle_background)
+        self.background_toggle.place(relx=1, x=-10, y=10, anchor=tk.NE)
 
-        self.depth_toggle = Button(self.root, text="Depth", command=self._toggle_depth)
-        self.depth_toggle.place(relx=1, x=-10, y=50, anchor=NE)
+        self.depth_toggle = ttk.Button(self.root, text="Depth", command=self._toggle_depth)
+        self.depth_toggle.place(relx=1, x=-10, y=50, anchor=tk.NE)
 
-        self.prev_image: ImageTk.PhotoImage
+        self.prev_image: Optional[ImageTk.PhotoImage] = None
 
         self.renderer = RendererThread(load_path, axis)
 
