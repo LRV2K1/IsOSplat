@@ -80,6 +80,11 @@ class _ProjectGaussians(Function):
     """Project 3D gaussians to 2D."""
 
     last_v_mean3D: Tensor
+    last_radii: Tensor
+
+    @staticmethod
+    def getRadii() -> Tensor:
+        return _ProjectGaussians.last_radii
 
     @staticmethod
     def getPositionalGradient() -> Tensor:
@@ -132,6 +137,8 @@ class _ProjectGaussians(Function):
             block_width,
             clip_thresh,
         )
+
+        _ProjectGaussians.last_radii = radii
 
         # Save non-tensors.
         ctx.img_height = img_height

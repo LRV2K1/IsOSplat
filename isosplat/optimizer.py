@@ -26,7 +26,6 @@ class Optimizer:
         return optimizable_tensors
 
     def back_propagate_loss(self, loss: Tensor) -> float:
-        self.optimizer.zero_grad()
         start = time.time()
 
         loss.backward()
@@ -34,8 +33,11 @@ class Optimizer:
 
         t2 = time.time() - start
 
-        self.optimizer.step()
         return t2
+
+    def step_loss(self):
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
     
     def set_learning_rate_scheduler(self, init_lr: float, final_lr: float, lr_delay_mult: float, lr_max_steps: int):
         self.mean_lr_sheduler = get_expon_lr_func(lr_init=init_lr,

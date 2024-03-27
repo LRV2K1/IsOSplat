@@ -14,6 +14,7 @@ from torchrl.record import CSVLogger
 from .camera import Camera
 from .optimizer import Optimizer
 from .optimization_params import OptimizationParams
+from .gaussian_model import GaussianModel
 import isosplat.loss_functions as loss_functions
 import isosplat.utils as utils
 from isosplat.utils import PointCloud, DataList, Data
@@ -31,15 +32,7 @@ class GaussianSplatting:
         self.background: Tensor = torch.zeros(3, device=self.device)
         self.frames: list = []
 
-        self.num_points: int = 0
-        self.means: Optional[Tensor] = None
-        self.scales: Optional[Tensor] = None
-        self.opacities: Optional[Tensor] = None
-        self.sh_base_coeffs: Optional[Tensor] = None
-        self.sh_rest_coeffs: Optional[Tensor] = None
-        self.quats: Optional[Tensor] = None
-        self.acc_grad: Optional[Tensor] = None
-        self.denom: Optional[Tensor] = None
+        self.gaussian_model: GaussianModel = GaussianModel(self.device, False)
         self.sh_degree: int = 0
 
         self.optimzable_params: OptimizationParams = OptimizationParams()
@@ -49,6 +42,10 @@ class GaussianSplatting:
         self.clones = 0
         self.culls = 0
         self.times = [0] * 3
+
+    @property
+    def num_points(self):
+        return self.gaussian_model.num_points
 
     def init_axis(self, add_axis: bool = False):
         means = torch.tensor(
@@ -61,10 +58,10 @@ class GaussianSplatting:
              [0.0, -1.0, 0.0]],
             device=self.device
         )
-        scales = torch.ones(self.num_points, 3, device=self.device) * 0.1
-        opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
-        sh_base_coeffs = torch.zeros(7, 1, 3, device=self.device)
-        sh_base_coeffs[:, 0, :] = torch.tensor(
+        scales = torch.ones(7, 3, device=self.device) * 0.01
+        opacities = torch.ones((7, 1), device=self.device) * 10.0
+        sh_coeffs = torch.zeros(7, 25, 3, device=self.device)
+        sh_coeffs[:, 0, :] = torch.tensor(
             [
                 [-10.0, -10.0, -10.0],
                 [10.0, -10.0, -10.0],
@@ -76,37 +73,30 @@ class GaussianSplatting:
             ],
             device=self.device
         )
-        sh_rest_coeffs = torch.zeros(7, 24, 3, device=self.device)
-        u = torch.rand(self.num_points, 1, device=self.device)
-        v = torch.rand(self.num_points, 1, device=self.device)
-        w = torch.rand(self.num_points, 1, device=self.device)
-        quats = torch.cat(
-            [
-                torch.sqrt(1.0 - u) * torch.sin(2.0 * math.pi * v),
-                torch.sqrt(1.0 - u) * torch.cos(2.0 * math.pi * v),
-                torch.sqrt(u) * torch.sin(2.0 * math.pi * w),
-                torch.sqrt(u) * torch.cos(2.0 * math.pi * w)
-            ],
-            -1
-        )
+        quats = torch.zeros(7, 4, device=self.device)
+        quats[:, 0] = 1
 
+        acc_grad = torch.zeros(7, 1, device=self.device)
+        denom = torch.zeros(7, 1, dtype=torch.int32, device=self.device)
+        max_radii2D = torch.zeros(7, device=self.device)
+        tensors = {
+            "means": means,
+            "scales": scales,
+            "opacities": opacities,
+            "sh_coeffs": sh_coeffs,
+            "quats": quats,
+            "acc_grad": acc_grad,
+            "denom": denom,
+            "max_radii2D": max_radii2D
+        }
+        values = {
+            "num_points": 7,
+            "mean_lr": 0
+        }
         if add_axis:
-            self.means = torch.cat((self.means, means), 0)
-            self.scales = torch.cat((self.scales, scales), 0)
-            self.opacities = torch.cat((self.opacities, opacities), 0)
-            self.sh_base_coeffs = torch.cat((self.sh_base_coeffs, sh_base_coeffs), 0)
-            self.sh_rest_coeffs = torch.cat((self.sh_rest_coeffs, sh_rest_coeffs), 0)
-            self.quats = torch.cat((self.quats, quats), 0)
-            self.num_points += 7
+            self.gaussian_model.add_gaussians((tensors, values))
         else:
-            self.means = means
-            self.scales = scales
-            self.opacities = opacities
-            self.sh_base_coeffs = sh_base_coeffs
-            self.sh_rest_coeffs = sh_rest_coeffs
-            self.quats = quats
-            self.sh_degree = 0
-            self.num_points = 7
+            self.gaussian_model.restore((tensors, values))
 
     def init_gaussians(
             self,
@@ -115,150 +105,92 @@ class GaussianSplatting:
             point_cloud: PointCloud = None,
             logger: Optional[CSVLogger] = None
     ):
+        gaussians = 0
         if load_path:
             print("Loading existing gaussians")
-            self.means = torch.load(load_path / "means.pt")
-            self.scales = torch.load(load_path / "scales.pt")
-            self.opacities = torch.load(load_path / "opacities.pt")
+            means = torch.load(load_path / "means.pt")
+            scales = torch.load(load_path / "scales.pt")
+            opacities = torch.load(load_path / "opacities.pt")
             sh_coeffs = torch.load(load_path / "sh.pt")
-            self.sh_base_coeffs = sh_coeffs[:, 0:1, :]
-            self.sh_rest_coeffs = sh_coeffs[:, 1:, :]
-            self.quats = torch.load(load_path / "quats.pt")
-            self.acc_grad = torch.load(load_path / "acc_grad.pt")
-            self.denom = torch.load(load_path / "denom.pt")
+            quats = torch.load(load_path / "quats.pt")
+            acc_grad = torch.load(load_path / "acc_grad.pt")
+            denom = torch.load(load_path / "denom.pt")
+            max_radii2D = torch.zeros(means.shape[0], device=self.device)
+
+            # mask = torch.max(torch.abs(self.scales), dim=1).values > 5.0
+            # self.means = self.means[~mask]
+            # self.scales = self.scales[~mask]
+            # self.opacities = self.opacities[~mask]
+            # self.sh_base_coeffs = self.sh_base_coeffs[~mask]
+            # self.sh_rest_coeffs = self.sh_rest_coeffs[~mask]
+            # self.quats = self.quats[~mask]
+            # self.acc_grad = self.acc_grad[~mask]
+            # self.denom = self.denom[~mask]
+
+            tensors = {
+                "means": means,
+                "scales": scales,
+                "opacities": opacities,
+                "sh_coeffs": sh_coeffs,
+                "quats": quats,
+                "acc_grad": acc_grad,
+                "denom": denom,
+                "max_radii2D": max_radii2D
+            }
+            values = {
+                "num_points": means.shape[0],
+                "mean_lr": 0.0001
+            }
+
             self.sh_degree = 4
-            self.num_points = self.opacities.shape[0]
+
+            self.gaussian_model.restore((tensors, values))
+            gaussians = means.shape[0]
+
         elif point_cloud:
             print("Creating gaussians from SFM point cloud")
-            xyzs, rgbs, errors = point_cloud
-
-            self.means = torch.tensor(np.float32(xyzs), device=self.device)
-            self.num_points = self.means.shape[0]
-        
-            # TODO scales
-            self.scales = torch.ones(self.num_points, 3, device=self.device) * 0.01
-            self.opacities = torch.ones((self.num_points, 1), device=self.device) * 10.0
-
-            colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs/256), device=self.device))
-            self.sh_base_coeffs = torch.zeros(self.num_points, 1, 3, device=self.device)
-            self.sh_base_coeffs[:, 0, :] = colors
-            self.sh_rest_coeffs = torch.rand(self.num_points, 24, 3, device=self.device)
-            self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
-            self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
-
-            u = torch.rand(self.num_points, 1, device=self.device)
-            v = torch.rand(self.num_points, 1, device=self.device)
-            w = torch.rand(self.num_points, 1, device=self.device)
-            self.quats = torch.cat(
-                [
-                    torch.sqrt(1.0 - u) * torch.sin(2.0 * math.pi * v),
-                    torch.sqrt(1.0 - u) * torch.cos(2.0 * math.pi * v),
-                    torch.sqrt(u) * torch.sin(2.0 * math.pi * w),
-                    torch.sqrt(u) * torch.cos(2.0 * math.pi * w)
-                ],
-                -1
-            )
+            gaussians = self.gaussian_model.create_from_pcd(point_cloud, 0.0001)
             self.sh_degree = 0
         else:
             print("Randomly initialize gaussians")
-            self.num_points = splats
-
-            self.means = 2 * (torch.rand(self.num_points, 3, device=self.device) - 0.5)
-            self.scales = torch.rand(self.num_points, 3, device=self.device)
-            self.opacities = torch.ones((self.num_points, 1), device=self.device)
-            self.sh_base_coeffs = torch.rand(self.num_points, 1, 3, device=self.device)
-            self.sh_rest_coeffs = torch.rand(self.num_points, 24, 3, device=self.device)
-            self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
-            self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
-
-            u = torch.rand(self.num_points, 1, device=self.device)
-            v = torch.rand(self.num_points, 1, device=self.device)
-            w = torch.rand(self.num_points, 1, device=self.device)
-            self.quats = torch.cat(
-                [
-                    torch.sqrt(1.0 - u) * torch.sin(2.0 * math.pi * v),
-                    torch.sqrt(1.0 - u) * torch.cos(2.0 * math.pi * v),
-                    torch.sqrt(u) * torch.sin(2.0 * math.pi * w),
-                    torch.sqrt(u) * torch.cos(2.0 * math.pi * w)
-                ],
-                -1
-            )
+            self.gaussian_model.create_from_random(splats, 0.0001)
             self.sh_degree = 0
-        print(f"Initialized {self.num_points} gaussians")
+        print(f"Initialized {gaussians} gaussians")
         if logger is not None:
-            logger.log_scalar("n_gaussians", self.num_points)
+            logger.log_scalar("n_gaussians", gaussians)
 
     def init_optimizer(self, optimizable_params: OptimizationParams):
         self.optimzable_params = optimizable_params
-        
-        optimize_tensors = {
-            'sh_base_coeffs': (self.sh_base_coeffs, self.optimzable_params.sh_lr),
-            'sh_rest_coeffs': (self.sh_rest_coeffs, self.optimzable_params.sh_lr / 20.0),
-            'means': (self.means, self.optimzable_params.position_lr_init),
-            'scales': (self.scales, self.optimzable_params.scaling_lr),
-            'opacities': (self.opacities, self.optimzable_params.opacity_lr),
-            'quats': (self.quats, self.optimzable_params.rotation_lr)
-        }
-
-        self.optimizer = Optimizer()
-        self._update_tensors(self.optimizer.load_tensor_dict(optimize_tensors))
-        self.optimizer.set_learning_rate_scheduler(
-            self.optimzable_params.position_lr_init, 
-            self.optimzable_params.position_lr_final, 
-            self.optimzable_params.position_lr_delay_mult, 
-            self.optimzable_params.position_lr_max_steps)
-
-    def _update_tensors(self, new_tensors: dict[str, Tensor]):
-        if "sh_base_coeffs" in new_tensors:
-            self.sh_base_coeffs = new_tensors["sh_base_coeffs"]
-        if "sh_rest_coeffs" in new_tensors:
-            self.sh_rest_coeffs = new_tensors["sh_rest_coeffs"]
-        if "means" in new_tensors:
-            self.means = new_tensors["means"]
-        if "scales" in new_tensors:
-            self.scales = new_tensors["scales"]
-        if "opacities" in new_tensors:
-            self.opacities = new_tensors["opacities"]
-        if "quats" in new_tensors:
-            self.quats = new_tensors["quats"]
-        self.num_points = self.opacities.shape[0]
-
-    def _is_refinement_iteration(self, itr: int) -> bool:
-        return itr % self.optimzable_params.densification_interval == 0 and \
-                itr >= self.optimzable_params.densify_from_iter and \
-                itr <= self.optimzable_params.densify_until_iter
-
-    def _is_reset_iteration(self, itr: int) -> bool:
-        return itr % self.optimzable_params.opacity_reset_interval == 0 and \
-                self.optimzable_params.iterations - itr >= 1000 and itr > 0
-
-    def _add_sh_band(self, itr: int) -> bool:
-        return itr % 1000 == 0 and self.sh_degree < 4 and itr > 0
+        self.optimizer = self.gaussian_model.init_optimizer(optimizable_params)
 
     def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None):
         n_data = len(data_list)
         iterations = self.optimzable_params.iterations
 
-        for itr in range(iterations):
+        for itr in range(1, iterations+1):
             average_image_loss = 0
             average_loss = 0
             data_itr = 0
-            lr = self.optimizer.update_learning_rate(itr)
-            if self._is_reset_iteration(itr):
-                self._reset_opacity()
-            if self._add_sh_band(itr):
+            self.gaussian_model.mean_lr = self.optimizer.update_learning_rate(itr)
+
+            if itr % 1000 == 0:
                 self.sh_degree += 1
+
+            bg = torch.rand(3, device=self.device) if self.optimzable_params.random_background else self.background
 
             random.shuffle(data_list)
             for name in data_list:
                 gt_view, camera, add_data = data[name]
+
                 bg_depth = 20.0
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
                 
-                nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera, background_depth=bg_depth)
+                nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera, background_depth=bg_depth, color=bg)
+
                 loss, image_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
                 t2 = self.optimizer.back_propagate_loss(loss)
+
                 average_image_loss += image_loss
                 average_loss += loss.item()
 
@@ -266,18 +198,38 @@ class GaussianSplatting:
                 self.times[1] += t1
                 self.times[2] += t2
 
-                self.add_densification_states()
+                with torch.no_grad():
+                    if itr < self.optimzable_params.iterations:
+                        self.optimizer.step_loss()
 
-                print(f"Iteration {itr + 1}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
-                data_itr += 1
-            
-            if self._is_refinement_iteration(itr):
-                culls, clones, splits = self._densify_and_prune(self.optimzable_params.densify_grad_threshold, 0.005, 2, lr)
-                if logger is not None:
-                    logger.log_scalar("culls", culls, itr)
-                    logger.log_scalar("splits", splits, itr)
-                    logger.log_scalar("clones", clones, itr)
-                    logger.log_scalar("n_gaussians", self.num_points, itr)
+            with torch.no_grad():
+                if itr < self.optimzable_params.densify_until_iter:
+                    self.gaussian_model.add_densification_states(
+                        _RasterizeGaussians.getViewSpaceGradient(),
+                        _RasterizeGaussians.getViewDepthGradient(),
+                        _ProjectGaussians.getRadii())
+
+                    if itr > self.optimzable_params.densify_from_iter and itr % self.optimzable_params.densification_interval == 0:
+                        max_screen_size = 20 if itr > self.optimzable_params.opacity_reset_interval else None
+                        extent = 50  # todo check
+                        culls, clones, splits = self.gaussian_model.densify_and_prune(
+                            position_grads=_ProjectGaussians.getPositionalGradient(),
+                            grad_threshold=self.optimzable_params.densify_grad_threshold,
+                            opacity_threshold=0.005,
+                            size_threshold=0.01 * extent,
+                            extent=extent,
+                            max_screen_size=max_screen_size)
+                        self.culls += culls
+                        self.clones += clones
+                        self.splits += splits
+                        if logger is not None:
+                            logger.log_scalar("culls", culls, itr)
+                            logger.log_scalar("splits", splits, itr)
+                            logger.log_scalar("clones", clones, itr)
+
+                    if itr % self.optimzable_params.opacity_reset_interval == 0:
+                        self.gaussian_model.reset_opacity()
+
             average_image_loss /= n_data
             if logger is not None:
                 logger.log_scalar("average_image_loss", average_image_loss, itr)
@@ -287,21 +239,12 @@ class GaussianSplatting:
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-        sh_coeffs = self._combine_sh_coeffs()
-        torch.save(sh_coeffs, f"{save_path}/sh.pt")
-        torch.save(self.means, f"{save_path}/means.pt")
-        torch.save(self.scales, f"{save_path}/scales.pt")
-        torch.save(self.opacities, f"{save_path}/opacities.pt")
-        torch.save(self.quats, f"{save_path}/quats.pt")
-        torch.save(self.acc_grad, f"{save_path}/acc_grad.pt")
-        torch.save(self.denom, f"{save_path}/denom.pt")
-
-    def _combine_sh_coeffs(self) -> Tensor:
-        return torch.cat((self.sh_base_coeffs, self.sh_rest_coeffs), 1)
-
-    def _calculate_sh_color(self, degrees_to_use: int, camera: Camera, sh_coeffs: Tensor) -> Tensor:
-        view_dirs = camera.get_camera_position().repeat(self.num_points, 1) - self.means
-        return spherical_harmonics(degrees_to_use, view_dirs, sh_coeffs)
+        tensors, values = self.gaussian_model.capture()
+        for key in tensors:
+            name = key
+            if key == "sh_coeffs":
+                name = "sh"
+            torch.save(tensors[key], f"{save_path}/{name}.pt")
 
     def rasterize(
             self,
@@ -321,10 +264,10 @@ class GaussianSplatting:
             color = self.background
 
         xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
-            self.means,
-            self.scales,
+            self.gaussian_model.get_means,
+            self.gaussian_model.get_scales,
             size,
-            self.quats,
+            self.gaussian_model.get_quats,
             view_mat,
             project_mat,
             focalx,
@@ -346,8 +289,8 @@ class GaussianSplatting:
             radii,
             conics,
             num_tiles_hit,
-            torch.sigmoid(self._calculate_sh_color(self.sh_degree, camera, self._combine_sh_coeffs())),
-            torch.sigmoid(self.opacities),
+            self.gaussian_model.get_colors(self.sh_degree, camera.get_camera_position()),
+            self.gaussian_model.get_opacities,
             height,
             width,
             BLOCK_WIDTH,
@@ -371,109 +314,6 @@ class GaussianSplatting:
             out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, background_depth, color)
             return out_img, out_depth, t0, t1
 
-    def _densify_and_prune(
-            self,
-            grad_threshold: float,
-            opacity_threshold: float,
-            size_threshold: float,
-            extend: float
-    ) -> tuple[int, int, int]:
-        grads = self.acc_grad / self.denom
-        grads[grads.isnan()] = 0.0
-        
-        clones = self._clone(grads, grad_threshold, size_threshold, extend)
-        splits = self._split(grads, grad_threshold, size_threshold, extend)
-
-        opacity_threshold = utils.inverse_sigmoid(opacity_threshold)
-        mask = (self.opacities <= opacity_threshold).squeeze()
-        cur_points = self.num_points
-        self._update_tensors(self.optimizer.prune_optimizer(~mask))
-        culls = cur_points - self.num_points
-        self.culls += culls
-
-        self.acc_grad = torch.zeros(self.num_points, 1, device=self.device)
-        self.denom = torch.zeros(self.num_points, 1, dtype=torch.int32, device=self.device)
-
-        torch.cuda.empty_cache()
-        return culls, clones, splits
-
-    def _split(self, grads: Tensor, grad_threshold: float, size_threshold: float, extend: float) -> int:
-        # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
-        padded_grads = torch.zeros(self.num_points - grads.shape[0], grads.shape[1], device=self.device)
-        padded_grads = torch.cat((grads, padded_grads))
-        mask = torch.where(torch.norm(padded_grads, dim=-1) >= grad_threshold, True, False)
-        mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values > size_threshold)
-
-        positional_gradient = _ProjectGaussians.getPositionalGradient()
-        padded_positional_gradient = torch.zeros(self.num_points - positional_gradient.shape[0],
-                                                 positional_gradient.shape[1], device=self.device)
-        padded_positional_gradient = torch.cat((positional_gradient, padded_positional_gradient))
-        mask_positional_gradient = padded_positional_gradient[mask]
-        padded_grad = torch.cat((torch.zeros_like(mask_positional_gradient, device=self.device),
-                                 mask_positional_gradient))
-
-        new_means = ((self.means[mask]).repeat(2, 1)) + (padded_grad * extend)
-        new_scales = ((self.scales[mask]).repeat(2, 1)) / 1.6
-        new_quats = (self.quats[mask]).repeat(2, 1)
-        new_sh_base_coeffs = (self.sh_base_coeffs[mask]).repeat(2, 1, 1)
-        new_sh_rest_coeffs = (self.sh_rest_coeffs[mask]).repeat(2, 1, 1)
-        new_opacities = (self.opacities[mask]).repeat(2, 1)
-
-        optimize_tensors = {
-            'sh_base_coeffs': new_sh_base_coeffs,
-            'sh_rest_coeffs': new_sh_rest_coeffs,
-            'means': new_means,
-            'scales': new_scales,
-            'opacities': new_opacities,
-            'quats': new_quats
-        }
-
-        self.optimizer.prune_optimizer(~mask)
-        self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
-        splits = int(new_opacities.shape[0]/2)
-        self.splits += splits
-        return splits
-
-    def _clone(self, grads: Tensor,  grad_threshold: float, size_threshold: float, extend: float) -> int:
-        # view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
-        # mask = torch.where(torch.norm(view_space_gradients, dim=-1) > grad_threshold, True, False)
-        mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
-        mask = torch.logical_and(mask, torch.max(self.scales, dim=1).values <= size_threshold)
-
-        positional_gradient = _ProjectGaussians.getPositionalGradient()[mask]
-        new_means = self.means[mask] + (positional_gradient * extend)
-        new_scales = self.scales[mask]
-        new_quats = self.quats[mask]
-        new_sh_base_coeffs = self.sh_base_coeffs[mask]
-        new_sh_rest_coeffs = self.sh_rest_coeffs[mask]
-        new_opacities = self.opacities[mask]
-
-        optimize_tensors = {
-            'sh_base_coeffs': new_sh_base_coeffs,
-            'sh_rest_coeffs': new_sh_rest_coeffs,
-            'means': new_means,
-            'scales': new_scales,
-            'opacities': new_opacities,
-            'quats': new_quats
-        }
-        self._update_tensors(self.optimizer.cat_optimizer_tensors(optimize_tensors))
-        clones = new_opacities.shape[0]
-        self.clones += clones
-        return clones
-
-    def add_densification_states(self):
-        view_space_gradients = _RasterizeGaussians.getViewSpaceGradient()
-        view_depth_gradients = _RasterizeGaussians.getViewDepthGradient()[:, None]
-        view_gradients = torch.cat((view_space_gradients, view_depth_gradients), 1)
-
-        mask = torch.where(torch.norm(view_gradients, dim=-1) > 0, True, False)
-        self.acc_grad[mask] += torch.norm(view_gradients[mask, :3], dim=-1, keepdim=True)
-        self.denom[mask] += 1
-
-    def _reset_opacity(self):
-        new_opacities = torch.min(self.opacities, utils.inverse_sigmoid_tensor(torch.ones_like(self.opacities) * 0.005))
-        self._update_tensors(self.optimizer.replace_optimizer_tensor(new_opacities, "opacities"))
-
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
         loss = (1.0 - self.optimzable_params.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) \
             + self.optimzable_params.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
@@ -492,7 +332,7 @@ class GaussianSplatting:
             logger: Optional[CSVLogger] = None
     ) -> float:
         average_loss = 0.0
-        print(f"Number gaussians: {self.num_points}")
+        print(f"Number gaussians: {self.gaussian_model.num_points}")
         print(f"Culls: {self.culls}, Splits: {self.splits}, Clones: {self.clones}")
         print(
             f"Total(s):\nProject: {self.times[0]:.3f}, Rasterize: {self.times[1]:.3f}, Backward: {self.times[2]:.3f}"
