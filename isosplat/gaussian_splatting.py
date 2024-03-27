@@ -245,7 +245,7 @@ class GaussianSplatting:
             background_depth: float = 20.0,
             color: Optional[Tensor] = None
     ) -> tuple[Tensor, Tensor, Tensor, float, float]:
-        view_mat, project_mat = camera.get_view_and_project_matrix()
+        view_mat = camera.get_view_matrix()
         focalx, focaly = camera.get_focal()
         width, height = camera.get_size()
         cx, cy = camera.get_principal()
@@ -261,7 +261,6 @@ class GaussianSplatting:
             size,
             self.gaussian_model.get_quats,
             view_mat,
-            project_mat,
             focalx,
             focaly,
             cx,

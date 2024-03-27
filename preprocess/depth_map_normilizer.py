@@ -42,7 +42,7 @@ class DepthMapNormalizer:
         depth_errors = depth_errors[means_mask]
         depth_errors = torch.where(depth_errors > 1.0, depth_errors, 1.0)
 
-        view, _ = camera.get_view_and_project_matrix()
+        view = camera.get_view_matrix()
         sparse_depths = (_get_depths(view, means) * (1.0 / depth_errors[:, 0]))
 
         dense_list = []

@@ -23,22 +23,6 @@ class Camera:
         self.cx = cx
         self.cy = cy
 
-        fov_width = (2 * self.focalx) / width
-        fov_height = (2 * self.focaly) / height
-        far = 10
-        near = 1
-        a = -(far + near) / (far - near)
-        b = -(2 * far * near) / (far - near)
-
-        self.perspective_project_mat = torch.tensor(
-            [
-                [fov_width, 0.0, 0.0, 0.0],
-                [0.0, fov_height, 0.0, 0.0],
-                [0.0, 0.0, a, b],
-                [0.0, 0.0, -1.0, 0.0]
-            ],
-            device=self.device
-        )
         self.rotation_mat = torch.tensor(
             [
                 [1.0, 0.0, 0.0, 0.0],
@@ -58,16 +42,8 @@ class Camera:
         self.viewMatrixUpdate = True
 
         self.rotation_mat.requires_grad = False
-        self.perspective_project_mat.requires_grad = False
 
-        self.project_matrix: Tensor
         self.view_matrix: Tensor
-
-    def set_perspective_matrix(self, mat: Tensor):
-        self.perspective_project_mat = mat
-        self.perspective_project_mat.requires_grad = False
-
-        self.viewMatrixUpdate = True
 
     def _update_view_and_projection_matrix(self):
         if self.viewMatrixUpdate:
@@ -84,14 +60,11 @@ class Camera:
             self.model_view_mat = torch.matmul(self.rotation_mat, translation_mat)
             self.model_view_mat.requires_grad = False
 
-            self.project_matrix = torch.matmul(self.perspective_project_mat, self.model_view_mat)
-            self.project_matrix.requires_grad = False
-
             self.viewMatrixUpdate = False
 
-    def get_view_and_project_matrix(self) -> tuple[Tensor, Tensor]:
+    def get_view_matrix(self) -> Tensor:
         self._update_view_and_projection_matrix()
-        return self.model_view_mat, self.project_matrix
+        return self.model_view_mat
 
     def get_view_direction(self) -> Tensor:
         direction = torch.tensor(
