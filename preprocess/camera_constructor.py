@@ -47,17 +47,11 @@ def create_camera_from_sfm_data(cam_data: prep.Camera, img_data: prep.Image, dev
     cam2world = np.linalg.inv(tr)
     cam_center = cam2world[:3, 3]
 
-    # rotate camera by 180 degrees
-    k = np.zeros((3, 3))
-    k[0, 0] = -1
-    k[1, 1] = -1
-    k[2, 2] = 1
-    nr = np.matmul(k, rot)
-    rot = np.zeros((4, 4))
-    rot[:3, :3] = nr
-    rot[3, 3] = 1.0
+    nrot = np.zeros((4, 4))
+    nrot[:3, :3] = rot
+    nrot[3, 3] = 1.0
 
-    view = torch.tensor(np.float32(rot), device=device)
+    view = torch.tensor(np.float32(nrot), device=device)
 
     focalx = float(cam_data.params[0])
     focaly = float(cam_data.params[0])

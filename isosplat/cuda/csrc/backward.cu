@@ -85,15 +85,11 @@ __global__ void nd_rasterize_backward_kernel(
         const float sigma =
             0.5f * (conic.x * delta.x * delta.x + conic.z * delta.y * delta.y) +
             conic.y * delta.x * delta.y;
-        if (sigma < 0.f) {
-            valid = 0;
-        }
+        valid &= (sigma >= 0.f);
         const float opac = opacities[g];
         const float vis = __expf(-sigma);
         const float alpha = min(0.99f, opac * vis);
-        if (alpha < 1.f / 255.f) {
-            valid = 0;
-        }
+        valid &= (alpha >= 1.f / 255.f);
         if(!warp.any(valid)){
             continue;
         }
@@ -127,7 +123,7 @@ __global__ void nd_rasterize_backward_kernel(
 
             const float v_sigma = -opac * vis * v_alpha;
             v_conic_local = {0.5f * v_sigma * delta.x * delta.x, 
-                             0.5f * v_sigma * delta.x * delta.y, 
+                             v_sigma * delta.x * delta.y, 
                              0.5f * v_sigma * delta.y * delta.y};
             v_xy_local = {v_sigma * (conic.x * delta.x + conic.y * delta.y), 
                           v_sigma * (conic.y * delta.x + conic.z * delta.y)};
@@ -316,8 +312,8 @@ __global__ void rasterize_backward_kernel(
 
                 const float v_sigma = -opac * vis * v_alpha;
                 v_conic_local = {0.5f * v_sigma * delta.x * delta.x, 
-                                        0.5f * v_sigma * delta.x * delta.y, 
-                                        0.5f * v_sigma * delta.y * delta.y};
+                                 v_sigma * delta.x * delta.y, 
+                                 0.5f * v_sigma * delta.y * delta.y};
                 v_xy_local = {v_sigma * (conic.x * delta.x + conic.y * delta.y), 
                                     v_sigma * (conic.y * delta.x + conic.z * delta.y)};
                 v_opacity_local = vis * v_alpha;
@@ -364,9 +360,11 @@ __global__ void project_gaussians_backward_kernel(
     const float* __restrict__ cov3d,
     const int* __restrict__ radii,
     const float3* __restrict__ conics,
+    const float* __restrict__ compensation,
     const float2* __restrict__ v_xy,
     const float* __restrict__ v_depth,
     const float3* __restrict__ v_conic,
+    const float* __restrict__ v_compensation,
     float3* __restrict__ v_cov2d,
     float* __restrict__ v_cov3d,
     float3* __restrict__ v_mean3d,
@@ -380,10 +378,11 @@ __global__ void project_gaussians_backward_kernel(
     float3 p_world = means3d[idx];
     float fx = intrins.x;
     float fy = intrins.y;
-    float cx = intrins.z;
-    float cy = intrins.w;
+    float3 p_view = transform_4x3(viewmat, p_world);
     // get v_mean3d from v_xy
-    v_mean3d[idx] = project_pix_vjp(projmat, p_world, img_size, v_xy[idx]);
+    v_mean3d[idx] = transform_4x3_rot_only_transposed(
+        viewmat,
+        project_pix_vjp({fx, fy}, p_view, v_xy[idx]));
 
     // get z gradient contribution to mean3d gradient
     // z = viemwat[8] * mean3d.x + viewmat[9] * mean3d.y + viewmat[10] *
@@ -395,6 +394,7 @@ __global__ void project_gaussians_backward_kernel(
 
     // get v_cov2d
     cov2d_to_conic_vjp(conics[idx], v_conic[idx], v_cov2d[idx]);
+    cov2d_to_compensation_vjp(compensation[idx], conics[idx], v_compensation[idx], v_cov2d[idx]);
     // get v_cov3d (and v_mean3d contribution)
     project_cov3d_ewa_vjp(
         p_world,
@@ -530,9 +530,9 @@ __device__ void scale_rot_to_cov3d_vjp(
     // df/dW = G * XT, df/dX = WT * G
     glm::mat3 v_M = 2.f * v_V * M;
     // glm::mat3 v_S = glm::transpose(R) * v_M;
-    v_scale.x = (float)glm::dot(R[0], v_M[0]);
-    v_scale.y = (float)glm::dot(R[1], v_M[1]);
-    v_scale.z = (float)glm::dot(R[2], v_M[2]);
+    v_scale.x = (float)glm::dot(R[0], v_M[0]) * glob_scale;
+    v_scale.y = (float)glm::dot(R[1], v_M[1]) * glob_scale;
+    v_scale.z = (float)glm::dot(R[2], v_M[2]) * glob_scale;
 
     glm::mat3 v_R = v_M * S;
     v_quat = quat_to_rotmat_vjp(quat, v_R);

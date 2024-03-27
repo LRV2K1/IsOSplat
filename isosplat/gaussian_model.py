@@ -32,9 +32,10 @@ class GaussianModel:
 
         if exp_scales:
             self.scaling_activation = torch.exp
+            self.scaling_inverse_activation = torch.log
         else:
             self.scaling_activation = lambda x: x
-        self.scaling_inverse_activation = torch.log
+            self.scaling_inverse_activation = lambda x: x
         self.rotation_activation = torch.nn.functional.normalize
         self.sigmoid_activation = torch.sigmoid
         self.inverse_sigmoid_activation = utils.inverse_sigmoid_tensor
@@ -75,7 +76,7 @@ class GaussianModel:
         self.num_points = xyzs.shape[0]
 
         self._means = torch.tensor(np.float32(xyzs), device=self.device)
-        self._scales = torch.ones(self.num_points, 3, device=self.device)    # TODO scales
+        self._scales = self.scaling_inverse_activation(torch.ones(self.num_points, 3, device=self.device) * 0.025)    # TODO scales
         self._opacities = self.inverse_sigmoid_activation(torch.ones(self.num_points, 1, device=self.device) * 0.1)
 
         colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs / 256), device=self.device))
@@ -100,7 +101,7 @@ class GaussianModel:
         self._scales = self.scaling_inverse_activation(torch.ones(self.num_points, 3, device=self.device) * 0.1)
         self._opacities = self.inverse_sigmoid_activation(torch.ones(self.num_points, 1, device=self.device) * 0.1)
 
-        self._sh_base_coeffs = self.inverse_sigmoid_activation(torch.ones(self.num_points, 1, 3, device=self.device))
+        self._sh_base_coeffs = self.inverse_sigmoid_activation(torch.ones(self.num_points, 1, 3, device=self.device) * 0.5)
         self._sh_rest_coeffs = torch.zeros(self.num_points, 24, 3, device=self.device)
 
         self._quats = torch.zeros(self.num_points, 4, device=self.device)
@@ -208,20 +209,10 @@ class GaussianModel:
         splits = self._split(grads, position_grads, grad_threshold, size_threshold)
 
         mask = (self.get_opacities < opacity_threshold).squeeze()
-        print(f"Opacities: {self._means[mask].shape}")
-        if (self._means[mask].shape[0] > 0):
-            print(f"max: {torch.max(self.get_opacities[mask]).item()}")
         if max_screen_size:
             big_points_vs = self._max_radii2D > max_screen_size
             big_points_ws = self.get_scales.max(dim=1).values > 0.1 * extent
             mask = torch.logical_or(torch.logical_or(mask, big_points_ws), big_points_vs)
-            print(f"screen: {self._means[big_points_vs].shape}")
-            if (self._means[big_points_vs].shape[0] > 0):
-                print(f"min: {torch.min(self._max_radii2D[big_points_vs]).item()}")
-            print(f"world: {self._means[big_points_ws].shape}")
-            if (self._means[big_points_ws].shape[0] > 0):
-                s = self.get_scales.max(dim=1).values
-                print(f"min: {torch.min(s[big_points_ws]).item()}")
         cur_points = self.num_points
         self._update_tensors(self.optimizer.prune_optimizer(~mask))
         culls = cur_points - self.num_points
