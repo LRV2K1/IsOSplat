@@ -32,7 +32,7 @@ class GaussianSplatting:
         self.background: Tensor = torch.zeros(3, device=self.device)
         self.frames: list = []
 
-        self.gaussian_model: GaussianModel = GaussianModel(self.device, False)
+        self.gaussian_model: GaussianModel = GaussianModel(self.device, True)
         self.sh_degree: int = 0
 
         self.optimzable_params: OptimizationParams = OptimizationParams()
@@ -153,7 +153,7 @@ class GaussianSplatting:
             self.sh_degree = 0
         else:
             print("Randomly initialize gaussians")
-            self.gaussian_model.create_from_random(splats, 0.0001)
+            gaussians = self.gaussian_model.create_from_random(splats, 0.0001)
             self.sh_degree = 0
         print(f"Initialized {gaussians} gaussians")
         if logger is not None:
@@ -198,6 +198,13 @@ class GaussianSplatting:
                 self.times[1] += t1
                 self.times[2] += t2
 
+                if itr % 100 == 0:
+                    print(f"Iteration {itr}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
+                data_itr += 1
+
+                if itr % 5 == 0:
+                    self.frames.append((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
+
                 with torch.no_grad():
                     if itr < self.optimzable_params.iterations:
                         self.optimizer.step_loss()
@@ -209,9 +216,9 @@ class GaussianSplatting:
                         _RasterizeGaussians.getViewDepthGradient(),
                         _ProjectGaussians.getRadii())
 
-                    if itr > self.optimzable_params.densify_from_iter and itr % self.optimzable_params.densification_interval == 0:
-                        max_screen_size = 20 if itr > self.optimzable_params.opacity_reset_interval else None
-                        extent = 50  # todo check
+                    if itr >= self.optimzable_params.densify_from_iter and itr % self.optimzable_params.densification_interval == 0:
+                        max_screen_size = 200 if itr > self.optimzable_params.opacity_reset_interval else None
+                        extent = 200  # todo check
                         culls, clones, splits = self.gaussian_model.densify_and_prune(
                             position_grads=_ProjectGaussians.getPositionalGradient(),
                             grad_threshold=self.optimzable_params.densify_grad_threshold,
@@ -245,6 +252,17 @@ class GaussianSplatting:
             if key == "sh_coeffs":
                 name = "sh"
             torch.save(tensors[key], f"{save_path}/{name}.pt")
+
+        if len(self.frames) > 0:
+            self.frames = [Image.fromarray(frame) for frame in self.frames]
+            self.frames[0].save(
+                f"{save_path}/video.gif",
+                save_all=True,
+                append_images=self.frames[1:],
+                optimize=False,
+                duration=5,
+                loop=0
+            )
 
     def rasterize(
             self,
