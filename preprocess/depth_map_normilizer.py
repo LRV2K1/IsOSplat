@@ -46,8 +46,8 @@ class DepthMapNormalizer:
         sparse_depths = (_get_depths(view, means) * (1.0 / depth_errors[:, 0]))
 
         dense_list = []
-        for [y, x] in xys:
-            dense_list.append(depth_map[int(x), int(y)])
+        for [x, y] in xys:
+            dense_list.append(depth_map[int(y), int(x)])
 
         dense_depths = torch.tensor(dense_list, device=device)
 
