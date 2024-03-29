@@ -52,9 +52,9 @@ class RendererThread:
         self._update_camera()
 
     def add_angle(self, anglh: float, anglv: float):
-        self.anglh += anglh
+        self.anglh -= anglh
         self.anglh = self.anglh % (2 * math.pi)
-        self.anglv += anglv
+        self.anglv -= anglv
         self.anglv = min(self.anglv, 0.5*math.pi)
         self.anglv = max(self.anglv, -0.5*math.pi)
         self._update_camera()
