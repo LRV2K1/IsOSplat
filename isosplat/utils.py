@@ -15,14 +15,6 @@ Data = NewType("Data", dict[str, tuple[Tensor, Camera, dict[str, any]]])
 DataList = NewType("DataList", list[str])
 
 
-def inverse_sigmoid(x):
-    return math.log(x/(1-x))
-
-
-def inverse_sigmoid_tensor(x):
-    return torch.log(x/(1-x))
-
-
 def map_gaussian_to_intersects(
     num_points: int,
     num_intersects: int,

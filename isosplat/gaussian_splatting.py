@@ -15,12 +15,12 @@ from .camera import Camera
 from .optimizer import Optimizer
 from .optimization_params import OptimizationParams
 from .gaussian_model import GaussianModel
-import isosplat.loss_functions as loss_functions
-import isosplat.utils as utils
+from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map
+
 from isosplat.utils import PointCloud, DataList, Data
+
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
-from isosplat import spherical_harmonics
 
 
 BLOCK_WIDTH = 16
@@ -306,13 +306,15 @@ class GaussianSplatting:
             return out_img, out_depth, t0, t1
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
-        loss = (1.0 - self.optimzable_params.l_ssim) * loss_functions.l1_loss(nv_view, gt_view) \
-            + self.optimzable_params.l_ssim * (1.0 - loss_functions.ssim(nv_view, gt_view))
+        loss = (1.0 - self.optimzable_params.l_ssim) * l1_loss(nv_view, gt_view) \
+            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view, gt_view))
         img_loss = loss.item()
         if "depth" in add_data and nv_depth is not None:
-            loss += self.optimzable_params.l_depth * loss_functions.l1_loss(nv_depth, add_data["depth"])
+            loss += self.optimzable_params.l_depth * l1_loss(nv_depth, add_data["depth"])
         if "edges" in add_data and nv_depth is not None:
-            loss += self.optimzable_params.l_smooth * loss_functions.l_smooth(nv_depth, add_data["edges"])
+            depth_mask = (nv_depth>0).detach()
+            nearDepthMean_map = nearMean_map(nv_depth, add_data["edges"]*depth_mask, kernelsize=3)
+            loss += self.optimzable_params.l_smooth * l2_loss(nearDepthMean_map, nv_depth*depth_mask)
         return loss, img_loss
 
     def verify(

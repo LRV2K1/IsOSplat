@@ -9,7 +9,7 @@ from .utils import (
     compute_cov2d_bounds,
     get_tile_bin_edges,
 )
-from .sh import spherical_harmonics
+from utils.sh_utils import spherical_harmonics
 # from .version import __version__
 import warnings
 

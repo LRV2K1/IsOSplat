@@ -6,9 +6,11 @@ from torch import Tensor
 
 from .optimizer import Optimizer
 from .optimization_params import OptimizationParams
-import isosplat.utils as utils
+
+
 from isosplat.utils import PointCloud
-from isosplat import spherical_harmonics
+from utils.general_utils import inverse_sigmoid
+from utils.sh_utils import spherical_harmonics
 
 
 class GaussianModel:
@@ -38,7 +40,7 @@ class GaussianModel:
             self.scaling_inverse_activation = lambda x: x
         self.rotation_activation = torch.nn.functional.normalize
         self.sigmoid_activation = torch.sigmoid
-        self.inverse_sigmoid_activation = utils.inverse_sigmoid_tensor
+        self.inverse_sigmoid_activation = inverse_sigmoid
 
     def capture(self) -> tuple[dict[str, Tensor], dict[str, int | float]]:
         tensors = {
@@ -79,7 +81,7 @@ class GaussianModel:
         self._scales = self.scaling_inverse_activation(torch.ones(self.num_points, 3, device=self.device) * 0.025)    # TODO scales
         self._opacities = self.inverse_sigmoid_activation(torch.ones(self.num_points, 1, device=self.device) * 0.1)
 
-        colors = utils.inverse_sigmoid_tensor(torch.tensor(np.float32(rgbs / 256), device=self.device))
+        colors = inverse_sigmoid(torch.tensor(np.float32(rgbs / 256), device=self.device))
         self._sh_base_coeffs = torch.zeros(self.num_points, 1, 3, device=self.device)
         self._sh_base_coeffs[:, 0, :] = colors
         self._sh_rest_coeffs = torch.zeros(self.num_points, 24, 3, device=self.device)
