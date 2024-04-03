@@ -1,7 +1,9 @@
-from typing import Any
+from typing import Any, Optional
 import torch
-from .project_gaussians import project_gaussians
-from .rasterize import rasterize_gaussians
+import time
+from torch import Tensor
+from .project_gaussians import project_gaussians, _ProjectGaussians
+from .rasterize import rasterize_gaussians, _RasterizeGaussians
 from .utils import (
     map_gaussian_to_intersects,
     bin_and_sort_gaussians,
@@ -10,7 +12,8 @@ from .utils import (
     get_tile_bin_edges,
 )
 from utils.sh_utils import spherical_harmonics
-# from .version import __version__
+from isosplat.camera import Camera
+from isosplat.gaussian_model import GaussianModel
 import warnings
 
 
@@ -164,3 +167,63 @@ class SphericalHarmonics(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, *grad_outputs: Any) -> Any:
         raise NotImplementedError
+    
+
+BLOCK_WIDTH = 16
+
+
+def render(
+        camera: Camera,
+        gm: GaussianModel,
+        global_size: float = 1.0,
+        sh_degree: int = 0,
+        background_depth: float = 20.0,
+        color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
+    view_mat = camera.get_view_matrix()
+    focalx, focaly = camera.get_focal()
+    width, height = camera.get_size()
+    cx, cy = camera.get_principal()
+
+    if color is None:
+        color = torch.zeros(3, device=gm.get_means.device)
+
+    start = time.time()
+
+    xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
+        gm.get_means,
+        gm.get_scales,
+        global_size,
+        gm.get_quats,
+        view_mat,
+        focalx,
+        focaly,
+        cx,
+        cy,
+        height,
+        width,
+        BLOCK_WIDTH
+    )
+
+    torch.cuda.synchronize()
+    t0 = time.time() - start
+    start = time.time()
+
+    out_img, out_alpha, out_depth = _RasterizeGaussians.apply(
+        xys,
+        depths,
+        radii,
+        conics,
+        num_tiles_hit,
+        gm.get_colors(sh_degree, camera.get_camera_position()),
+        gm.get_opacities,
+        height,
+        width,
+        BLOCK_WIDTH,
+        color,
+        background_depth,
+        True
+    )
+
+    torch.cuda.synchronize()
+    t1 = time.time() - start
+    return out_img, out_alpha, out_depth, t0, t1

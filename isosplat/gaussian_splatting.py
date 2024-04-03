@@ -18,12 +18,10 @@ from .gaussian_model import GaussianModel
 from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map
 
 from isosplat.utils import PointCloud, DataList, Data
+from isosplat import render
 
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
-
-
-BLOCK_WIDTH = 16
 
 
 class GaussianSplatting:
@@ -175,7 +173,7 @@ class GaussianSplatting:
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
                 
-                nv_view, nv_alpha, nv_depth, t0, t1 = self.rasterize(camera, background_depth=bg_depth, color=bg)
+                nv_view, nv_alpha, nv_depth, t0, t1 = render(camera, self.gaussian_model, sh_degree=self.sh_degree, background_depth=bg_depth, color=bg)
 
                 loss, image_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
                 t2 = self.optimizer.back_propagate_loss(loss)
@@ -238,62 +236,6 @@ class GaussianSplatting:
                 name = "sh"
             torch.save(tensors[key], f"{save_path}/{name}.pt")
 
-    def rasterize(
-            self,
-            camera: Camera,
-            size: float = 1.0,
-            background_depth: float = 20.0,
-            color: Optional[Tensor] = None
-    ) -> tuple[Tensor, Tensor, Tensor, float, float]:
-        view_mat = camera.get_view_matrix()
-        focalx, focaly = camera.get_focal()
-        width, height = camera.get_size()
-        cx, cy = camera.get_principal()
-
-        start = time.time()  # get iteration start time
-
-        if color is None:
-            color = self.background
-
-        xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
-            self.gaussian_model.get_means,
-            self.gaussian_model.get_scales,
-            size,
-            self.gaussian_model.get_quats,
-            view_mat,
-            focalx,
-            focaly,
-            cx,
-            cy,
-            height,
-            width,
-            BLOCK_WIDTH
-        )
-
-        torch.cuda.synchronize()
-        t0 = time.time() - start
-        start = time.time()
-
-        out_img, out_alpha, out_depth = _RasterizeGaussians.apply(
-            xys,
-            depths,
-            radii,
-            conics,
-            num_tiles_hit,
-            self.gaussian_model.get_colors(self.sh_degree, camera.get_camera_position()),
-            self.gaussian_model.get_opacities,
-            height,
-            width,
-            BLOCK_WIDTH,
-            color,
-            background_depth,
-            True
-        )
-
-        torch.cuda.synchronize()
-        t1 = time.time() - start
-        return out_img, out_alpha, out_depth, t0, t1
-
     def render(
             self,
             camera: Camera,
@@ -302,7 +244,7 @@ class GaussianSplatting:
             color: Optional[Tensor] = None
     ) -> tuple[Tensor, Tensor, float, float]:
         with torch.no_grad():
-            out_img, _, out_depth, t0, t1 = self.rasterize(camera, size, background_depth, color)
+            out_img, _, out_depth, t0, t1 = render(camera, self.gaussian_model, size, 4, background_depth, color)
             return out_img, out_depth, t0, t1
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
@@ -359,7 +301,7 @@ class GaussianSplatting:
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
 
-                nv_view, nv_alpha, nv_depth, _, _ = self.rasterize(camera, background_depth=bg_depth)
+                nv_view, nv_alpha, nv_depth, _, _ = render(camera, self.gaussian_model, sh_degree=self.sh_degree, background_depth=bg_depth)
                 loss, img_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
 
                 average_loss += img_loss
