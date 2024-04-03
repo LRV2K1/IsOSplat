@@ -1,6 +1,7 @@
 import shutil
 from pathlib import Path
 import os
+from typing import NewType
 
 import tyro
 import numpy as np
@@ -10,7 +11,13 @@ import enlighten
 import pycolmap
 from pycolmap import logging
 from PIL import Image
-from depth.sfm_types import *
+
+
+PointCloud = NewType('PointCloud', list[tuple[tuple[float, float, float], tuple[int, int, int]]])
+
+CameraData = NewType('CameraData', tuple[int, int, float, float, float, float])
+ImageData = NewType('ImageData', tuple[str, int, tuple[float, float, float], tuple[float, float, float]])
+
 
 class SFM:
     def __init__(self, img_path: Path):
