@@ -1,5 +1,4 @@
-import math
-from typing import Tuple, NewType, Optional
+from typing import Tuple, NewType
 import numpy as np
 from jaxtyping import Float, Int
 

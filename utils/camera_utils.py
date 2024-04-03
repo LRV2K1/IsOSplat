@@ -10,6 +10,7 @@
 #
 
 from scene.cameras import Camera
+from scene.dataset_reader import CameraInfo
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -18,7 +19,7 @@ from utils.graphics_utils import fov2focal
 
 WARNED = False
 
-def loadCam(args, id, cam_info, resolution_scale):
+def loadCam(args, id: int, cam_info: CameraInfo, resolution_scale: float):
     orig_w, orig_h = cam_info.image.size
 
     if args.resolution in [1, 2, 4, 8]:

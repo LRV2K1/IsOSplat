@@ -14,7 +14,7 @@ from .colmap_loader import read_extrinsics_binary, read_intrinsics_binary, read_
 from .image_loader import image_path_to_tensor, save_img_from_tensor
 from .camera_constructor import create_camera_from_cam_file, create_camera_from_sfm_data
 from .marigold_loader import load_depth_map
-from .preprocess_params import PreProcessParams, InitModel, CamModel, DepthModel
+from arguments import GroupParams, InitModel, CamModel, DepthModel
 from .object_segmenter import ObjectSegmenter
 
 
@@ -43,30 +43,30 @@ class PreProcessor:
 
     def preprocess_data(
             self, device: torch.device,
-            preprocess_params: PreProcessParams,
+            preprocess_params: GroupParams,
             logger: Optional[CSVLogger] = None
     ) -> tuple[DataList, Data, Optional[PointCloud]]:
         
         if not self.has_img:
             print(f"No image file found or given, generating dummy data")
             return self._dummy_data(device, preprocess_params.depth_model, preprocess_params.no_alpha)
-        if preprocess_params.init_model == InitModel.SFM and not self.has_sfm:
+        if InitModel[preprocess_params.init_model] == InitModel.SFM and not self.has_sfm:
             raise Exception(f"Cannot initialize gaussians with SFM, sfm path not found: {self.sfm_path}")
-        if preprocess_params.cam_model == CamModel.CamFile and not self.has_cams:
+        if CamModel[preprocess_params.cam_model] == CamModel.CamFile and not self.has_cams:
             raise Exception(f"Cannot create cameras with cam files, cams path not found: {self.cams_path}")
-        if preprocess_params.cam_model == CamModel.SFM and not self.has_sfm:
+        if CamModel[preprocess_params.cam_model] == CamModel.SFM and not self.has_sfm:
             raise Exception(f"Cannot create cameras with SFM, sfm path not found: {self.sfm_path}")
-        if not preprocess_params.depth_model == DepthModel.NoDepth and not self.depth_path:
+        if not DepthModel[preprocess_params.depth_model] == DepthModel.NoDepth and not self.depth_path:
             raise Exception(f"Cannot create depth maps, depth_npy path not found: {self.depth_path}")
-        if preprocess_params.depth_model == DepthModel.SFM and not self.has_sfm:
+        if DepthModel[preprocess_params.depth_model] == DepthModel.SFM and not self.has_sfm:
             raise Exception(f"Cannot normalize depth maps with SFM, sfm path not found: {self.sfm_path}")
-        if preprocess_params.depth_model == DepthModel.DepthFile and not self.has_depth_file:
+        if DepthModel[preprocess_params.depth_model] == DepthModel.DepthFile and not self.has_depth_file:
             raise Exception(f"Cannot normalize depth maps with depth file, depth_file path not found: {self.depth_file_path}")
 
         pid, point_cloud = None, None
         sfm_images = None
         sfm_cameras = None
-        if preprocess_params.init_model == InitModel.SFM or preprocess_params.cam_model == CamModel.SFM:
+        if InitModel[preprocess_params.init_model] == InitModel.SFM or CamModel[preprocess_params.cam_model] == CamModel.SFM:
             pid, point_cloud = read_points3D_binary(self.sfm_path / "points3D.bin")
             point_cloud = self._flip_point_cloud(point_cloud)
             sfm_images = read_extrinsics_binary(self.sfm_path / "images.bin")
@@ -75,7 +75,7 @@ class PreProcessor:
         data = Data({})
         data_list = DataList([])
 
-        match preprocess_params.cam_model:
+        match CamModel[preprocess_params.cam_model]:
             case CamModel.CamFile:
                 for file in os.listdir(self.cams_path):
                     filename = os.fsdecode(file)
@@ -125,13 +125,13 @@ class PreProcessor:
                     data[name] = gt_image, camera, add_data
                     data_list.append(name)
             case _:
-                raise Exception(f"No cam model found: {preprocess_params.cam_model}")
+                raise Exception(f"No cam model found: {CamModel[preprocess_params.cam_model]}")
 
         depth_map_normalizer = DepthMapNormalizer()
         # edge_detector = CannyEdgeDetector(device)
         edge_detector = CV2CannyEdgeDetector(preprocess_params.edge_low, preprocess_params.edge_high)
 
-        if not preprocess_params.depth_model == DepthModel.NoDepth:
+        if not DepthModel[preprocess_params.depth_model] == DepthModel.NoDepth:
             for name in data_list:
                 gt_image, camera, add_data = data[name]
                 edge_map = edge_detector.calculate_edge_map(name, gt_image, device)
@@ -140,7 +140,7 @@ class PreProcessor:
                 # save_img_from_tensor(edge_map, "edges", name)
 
         depth_parameters = {}
-        if preprocess_params.depth_model == DepthModel.SFM:
+        if DepthModel[preprocess_params.depth_model] == DepthModel.SFM:
             for sfm_image in sfm_images.values():
                 name = sfm_image.name.split('.')[0]
                 gt_image, camera, add_data = data[name]
@@ -160,7 +160,7 @@ class PreProcessor:
                 add_data["depth"] = depth_map
                 add_data["bg_depth"] = torch.max(depth_map).item() + 10
                 data[name] = gt_image, camera, add_data
-        if preprocess_params.depth_model == DepthModel.DepthFile:
+        if DepthModel[preprocess_params.depth_model] == DepthModel.DepthFile:
             for name in data_list:
                 gt_image, camera, add_data = data[name]
 
@@ -184,7 +184,7 @@ class PreProcessor:
             object_segmenter = ObjectSegmenter(self.segment_path)
             object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
 
-        if preprocess_params.init_model == InitModel.Random:
+        if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None
         else:
             return data_list, data, point_cloud

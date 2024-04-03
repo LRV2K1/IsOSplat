@@ -13,7 +13,7 @@ from torchrl.record import CSVLogger
 
 from .camera import Camera
 from .optimizer import Optimizer
-from .optimization_params import OptimizationParams
+from arguments import GroupParams
 from .gaussian_model import GaussianModel
 from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map
 
@@ -34,7 +34,7 @@ class GaussianSplatting:
         self.gaussian_model: GaussianModel = GaussianModel(self.device)
         self.sh_degree: int = 0
 
-        self.optimzable_params: OptimizationParams = OptimizationParams()
+        self.optimzable_params: Optional[GroupParams] = None
         self.optimizer: Optional[Optimizer] = None
 
         self.splits = 0
@@ -148,7 +148,7 @@ class GaussianSplatting:
         if logger is not None:
             logger.log_scalar("n_gaussians", gaussians)
 
-    def init_optimizer(self, optimizable_params: OptimizationParams):
+    def init_optimizer(self, optimizable_params: GroupParams):
         self.optimzable_params = optimizable_params
         self.optimizer = self.gaussian_model.init_optimizer(optimizable_params)
 
@@ -162,7 +162,7 @@ class GaussianSplatting:
             data_itr = 0
             self.gaussian_model.mean_lr = self.optimizer.update_learning_rate(itr)
 
-            if itr % 1000 == 0:
+            if itr % 1000 == 0 and self.sh_degree < 4:
                 self.sh_degree += 1
 
             bg = torch.rand(3, device=self.device) if self.optimzable_params.random_background else self.background

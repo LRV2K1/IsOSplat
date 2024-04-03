@@ -3,107 +3,26 @@ from typing import Optional
 import time
 import os
 
-import tyro
+# import tyro
 import torch
 from torchrl.record import CSVLogger
 
 from isosplat.gaussian_splatting import GaussianSplatting
 from isosplat.utils import PointCloud, Data, DataList
-from isosplat.optimization_params import OptimizationParams
 from preprocess.preprocessor import PreProcessor
-from preprocess.preprocess_params import InitModel, CamModel, DepthModel, PreProcessParams
+from arguments import ModelParams, PipelineParams, PreProcessParams, OptimizationParams, get_combined_args, GroupParams
+from argparse import ArgumentParser
 
 
 def main(
+        optimization_params: GroupParams,
+        preprocess_params: GroupParams,
+
         data_path: Optional[Path] = None,
         save_path: Optional[Path] = None,
         load_path: Optional[Path] = None,
         log_path: Optional[Path] = None,
-        opt_param_path: Optional[Path] = None,
-        pre_param_path: Optional[Path] = None,
-
-        # optimization params
-        iterations: Optional[int] = None,
-        position_lr_init: Optional[float] = None,
-        position_lr_final: Optional[float] = None,
-        position_lr_delay_mult: Optional[float] = None,
-        position_lr_max_steps: Optional[int] = None,
-        sh_lr: Optional[float] = None,
-        opacity_lr: Optional[float] = None,
-        scaling_lr: Optional[float] = None,
-        rotation_lr: Optional[float] = None,
-        
-        l_ssim: Optional[float] = None,
-        l_depth: Optional[float] = None,
-        l_smooth: Optional[float] = None,
-
-        densification_interval: Optional[int] = None,
-        opacity_reset_interval: Optional[int] = None,
-
-        densify_from_iter: Optional[int] = None,
-        densify_until_iter: Optional[int] = None,
-        densify_grad_threshold: Optional[float] = None,
-
-        random_background: Optional[bool] = None,
-
-        # preprocess params
-        splats: Optional[int] = None,
-
-        init_model: Optional[InitModel] = None,
-        cam_model: Optional[CamModel] = None,
-        depth_model: Optional[DepthModel] = None,
-
-        no_alpha: Optional[bool] = None,
-
-        edge_low: Optional[float] = None,
-        edge_high: Optional[float] = None
 ) -> float:
-    optimization_params = OptimizationParams()
-    opt_parameters = {
-        "iterations": iterations,
-        "position_lr_init": position_lr_init,
-        "position_lr_final": position_lr_final,
-        "position_lr_delay_mult": position_lr_delay_mult,
-        "position_lr_max_steps": position_lr_max_steps,
-        "sh_lr": sh_lr,
-        "opacity_lr": opacity_lr,
-        "scaling_lr": scaling_lr,
-        "rotation_lr": rotation_lr,
-
-        "l_ssim": l_ssim,
-        "l_depth": l_depth,
-        "l_smooth": l_smooth,
-
-        "densification_interval": densification_interval,
-        "opacity_reset_interval": opacity_reset_interval,
-
-        "densify_from_iter": densify_from_iter,
-        "densify_until_iter": densify_until_iter,
-        "densify_grad_threshold": densify_grad_threshold,
-
-        "random_background": random_background,
-        }
-    if opt_param_path is not None:
-        optimization_params.load_json(opt_param_path)
-    optimization_params.load_dictionary(opt_parameters)
-    
-    preprocess_params = PreProcessParams()
-    pre_parameters = {
-        "splats": splats,
-
-        "init_model": init_model,
-        "cam_model": cam_model,
-        "depth_model": depth_model,
-
-        "no_alpha": no_alpha,
-
-        "edge_low": edge_low,
-        "edge_high": edge_high       
-    }
-    if pre_param_path is not None:
-        preprocess_params.load_json(pre_param_path)
-    preprocess_params.load_dictionary(pre_parameters)
-
     logger = None
     if log_path is not None:
         start_time = time.time()
@@ -151,7 +70,7 @@ def main(
 
 def preprocess(
         data_path: Optional[Path],
-        preprocess_params: PreProcessParams,
+        preprocess_params: GroupParams,
         device: torch.device,
         logger: Optional[CSVLogger] = None
 ) -> tuple[DataList, Data, Optional[PointCloud]]:
@@ -169,7 +88,7 @@ def train(
         data: Data,
         point_cloud: Optional[PointCloud],
         load_path: Optional[Path],
-        optimization_params: OptimizationParams,
+        optimization_params: GroupParams,
         splats: int,
         device: torch.device,
         logger: Optional[CSVLogger] = None
@@ -205,4 +124,27 @@ def verify(
 
 
 if __name__ == '__main__':
-    tyro.cli(main)
+    parser = ArgumentParser(description="Testing script parameters")
+
+    parser.add_argument("--data_path", default=None, type=Path)
+    parser.add_argument("--save_path", default=None, type=Path)
+    parser.add_argument("--load_path", default=None, type=Path)
+    parser.add_argument("--log_path", default=None, type=Path)
+    parser.add_argument("--opt_param_path", default=None, type=Path)
+    parser.add_argument("--pre_param_path", default=None, type=Path)
+
+    optimization_args = OptimizationParams(parser)
+    preprocess_args = PreProcessParams(parser)
+    model = ModelParams(parser, sentinel=True)
+    pipeline = PipelineParams(parser)
+
+    args = get_combined_args(parser)
+
+    optimization_args.load_json(args.opt_param_path)
+    preprocess_args.load_json(args.pre_param_path)
+
+    optimization_params = optimization_args.extract(args)
+    preprocess_params = preprocess_args.extract(args)
+
+    # tyro.cli(main)
+    main(optimization_params, preprocess_params, args.data_path, args.save_path, args.load_path, args.log_path)

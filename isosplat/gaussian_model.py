@@ -5,10 +5,11 @@ import torch
 from torch import Tensor
 
 from .optimizer import Optimizer
-from .optimization_params import OptimizationParams
+from arguments import OptimizationParams
 
 
 from isosplat.utils import PointCloud
+
 from utils.general_utils import inverse_sigmoid
 from utils.sh_utils import spherical_harmonics
 
