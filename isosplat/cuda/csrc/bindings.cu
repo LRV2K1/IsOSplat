@@ -3,6 +3,7 @@
 #include "forward.cuh"
 #include "helpers.cuh"
 #include "sh.cuh"
+#include "simple_knn.h"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 #include <cstdio>
@@ -676,4 +677,17 @@ std::
     );
 
     return std::make_tuple(v_xy, v_conic, v_colors, v_opacity, v_depth);
+}
+
+torch::Tensor
+distCUDA2(const torch::Tensor& points)
+{
+  const int P = points.size(0);
+
+  auto float_opts = points.options().dtype(torch::kFloat32);
+  torch::Tensor means = torch::full({P}, 0.0, float_opts);
+  
+  SimpleKNN::knn(P, (float3*)points.contiguous().data<float>(), means.contiguous().data<float>());
+
+  return means;
 }

@@ -15,4 +15,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("compute_cov2d_bounds", &compute_cov2d_bounds_tensor);
     m.def("map_gaussian_to_intersects", &map_gaussian_to_intersects_tensor);
     m.def("get_tile_bin_edges", &get_tile_bin_edges_tensor);
+    m.def("distCUDA2", &distCUDA2);
 }

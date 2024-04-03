@@ -12,6 +12,7 @@ from isosplat.utils import PointCloud
 
 from utils.general_utils import inverse_sigmoid
 from utils.sh_utils import spherical_harmonics
+import isosplat.cuda as _C
 
 
 class GaussianModel:
@@ -79,7 +80,9 @@ class GaussianModel:
         self.num_points = xyzs.shape[0]
 
         self._means = torch.tensor(np.float32(xyzs), device=self.device)
-        self._scales = self.scaling_inverse_activation(torch.ones(self.num_points, 3, device=self.device) * 0.025)    # TODO scales
+        dist2 = torch.clamp_min(_C.distCUDA2(torch.from_numpy(np.asarray(xyzs)).float().cuda()), 0.0000001)
+        self._scales = self.scaling_inverse_activation(torch.sqrt(dist2))[...,None].repeat(1, 3)    # TODO scales
+        print(self._scales.shape)
         self._opacities = self.inverse_sigmoid_activation(torch.ones(self.num_points, 1, device=self.device) * 0.1)
 
         colors = inverse_sigmoid(torch.tensor(np.float32(rgbs / 256), device=self.device))

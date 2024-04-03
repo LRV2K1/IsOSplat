@@ -205,3 +205,6 @@ std::
         const torch::Tensor &v_output_alpha,
         const torch::Tensor &v_output_depth //new, todo
     );
+
+torch::Tensor
+distCUDA2(const torch::Tensor& points);
