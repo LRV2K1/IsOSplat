@@ -2,12 +2,14 @@ from pathlib import Path
 import os
 from enum import Enum
 from typing import Optional
+import numpy as np
 
 import torch
 from torchrl.record import CSVLogger
 
 from isosplat.camera import Camera
-from isosplat.utils import PointCloud, Data, DataList
+from utils.graphics_utils import BasicPointCloud
+from isosplat.utils import Data, DataList
 from .depth_map_normilizer import DepthMapNormalizer
 from .edge_detector import CannyEdgeDetector, CV2CannyEdgeDetector
 from .colmap_loader import read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary
@@ -45,7 +47,7 @@ class PreProcessor:
             self, device: torch.device,
             preprocess_params: GroupParams,
             logger: Optional[CSVLogger] = None
-    ) -> tuple[DataList, Data, Optional[PointCloud]]:
+    ) -> tuple[DataList, Data, Optional[BasicPointCloud]]:
         
         if not self.has_img:
             print(f"No image file found or given, generating dummy data")
@@ -67,10 +69,13 @@ class PreProcessor:
         sfm_images = None
         sfm_cameras = None
         if InitModel[preprocess_params.init_model] == InitModel.SFM or CamModel[preprocess_params.cam_model] == CamModel.SFM:
-            pid, point_cloud = read_points3D_binary(self.sfm_path / "points3D.bin")
-            point_cloud = self._flip_point_cloud(point_cloud)
+            pid, pc = read_points3D_binary(self.sfm_path / "points3D.bin")
+            pc = self._flip_point_cloud(pc)
+            xyzs, colors, errors = pc
+            point_cloud = BasicPointCloud(xyzs, colors, np.zeros_like(xyzs), errors)
             sfm_images = read_extrinsics_binary(self.sfm_path / "images.bin")
             sfm_cameras = read_intrinsics_binary(self.sfm_path / "cameras.bin")
+
 
         data = Data({})
         data_list = DataList([])
@@ -180,9 +185,9 @@ class PreProcessor:
         if logger is not None:
             logger.log_hparams(depth_parameters)
 
-        if sfm_images is not None:
-            object_segmenter = ObjectSegmenter(self.segment_path)
-            object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
+        # if sfm_images is not None:
+        #     object_segmenter = ObjectSegmenter(self.segment_path)
+        #     object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
 
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None
@@ -222,10 +227,10 @@ class PreProcessor:
         return data_list, data, None
 
     @staticmethod
-    def _flip_point_cloud(point_cloud: PointCloud) -> PointCloud:
+    def _flip_point_cloud(point_cloud: tuple[np.ndarray, np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         xyzs, rgbs, errors = point_cloud
 
         xyzs[:, 1] = xyzs[:, 1] * -1.0
         xyzs[:, 2] = xyzs[:, 2] * -1.0
 
-        return PointCloud((xyzs, rgbs, errors))
+        return (xyzs, rgbs, errors)

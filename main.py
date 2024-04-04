@@ -8,7 +8,8 @@ import torch
 from torchrl.record import CSVLogger
 
 from isosplat.gaussian_splatting import GaussianSplatting
-from isosplat.utils import PointCloud, Data, DataList
+from utils.graphics_utils import BasicPointCloud
+from isosplat.utils import Data, DataList
 from preprocess.preprocessor import PreProcessor
 from arguments import ModelParams, PipelineParams, PreProcessParams, OptimizationParams, get_combined_args, GroupParams
 from argparse import ArgumentParser
@@ -73,7 +74,7 @@ def preprocess(
         preprocess_params: GroupParams,
         device: torch.device,
         logger: Optional[CSVLogger] = None
-) -> tuple[DataList, Data, Optional[PointCloud]]:
+) -> tuple[DataList, Data, Optional[BasicPointCloud]]:
     preprocessor = PreProcessor(data_path)
     data_list, data, point_cloud = preprocessor.preprocess_data(
         device=device,
@@ -86,7 +87,7 @@ def preprocess(
 def train(
         data_list: DataList,
         data: Data,
-        point_cloud: Optional[PointCloud],
+        point_cloud: Optional[BasicPointCloud],
         load_path: Optional[Path],
         optimization_params: GroupParams,
         splats: int,

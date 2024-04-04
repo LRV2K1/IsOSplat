@@ -6,7 +6,8 @@ import torch
 from torch import Tensor, optim
 
 from isosplat.camera import Camera
-from isosplat.utils import PointCloud
+from utils.graphics_utils import BasicPointCloud
+# from isosplat.utils import PointCloud
 from preprocess.colmap_loader import Image
 
 
@@ -16,7 +17,7 @@ class DepthMapNormalizer:
             name: str,
             depth_map: np.ndarray,
             point_cloud_id: dict[int, int],
-            point_cloud: PointCloud,
+            point_cloud: BasicPointCloud,
             image: Image,
             camera: Camera,
             device: torch.device
@@ -24,7 +25,7 @@ class DepthMapNormalizer:
         print(f"Normalizing depth map {name}")
         depth_map = torch.tensor(np.float32(depth_map), device=device)
         
-        xzys, _, errors = point_cloud
+        xzys, errors = point_cloud.points, point_cloud.errors
 
         ipids = torch.tensor(image.point3D_ids, device=device)
         ipids_mask = torch.where(ipids >= 0, True, False)

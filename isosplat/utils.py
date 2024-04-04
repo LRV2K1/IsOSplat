@@ -9,7 +9,7 @@ import isosplat.cuda as _C
 from isosplat.camera import Camera
 
 
-PointCloud = NewType("PointCloud", tuple[np.ndarray, np.ndarray, np.ndarray])
+# PointCloud = NewType("PointCloud", tuple[np.ndarray, np.ndarray, np.ndarray])
 Data = NewType("Data", dict[str, tuple[Tensor, Camera, dict[str, any]]])
 DataList = NewType("DataList", list[str])
 

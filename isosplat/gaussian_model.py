@@ -8,8 +8,9 @@ from .optimizer import Optimizer
 from arguments import OptimizationParams
 
 
-from isosplat.utils import PointCloud
+# from isosplat.utils import PointCloud
 
+from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import inverse_sigmoid
 from utils.sh_utils import spherical_harmonics
 import isosplat.cuda as _C
@@ -75,8 +76,8 @@ class GaussianModel:
         self.num_points = values["num_points"]
         self.mean_lr = values["mean_lr"]
 
-    def create_from_pcd(self, point_cloud: PointCloud, mean_lr: float) -> int:
-        xyzs, rgbs, errors = point_cloud
+    def create_from_pcd(self, pcd: BasicPointCloud, mean_lr: float) -> int:
+        xyzs, rgbs, errors = pcd.points, pcd.colors, pcd.errors
         self.num_points = xyzs.shape[0]
 
         self._means = torch.tensor(np.float32(xyzs), device=self.device)

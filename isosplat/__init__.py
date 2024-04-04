@@ -13,7 +13,8 @@ from .utils import (
 )
 from utils.sh_utils import spherical_harmonics
 from isosplat.camera import Camera
-from isosplat.gaussian_model import GaussianModel
+# from isosplat.gaussian_model import GaussianModel
+from scene.gaussian_model import GaussianModel
 import warnings
 
 
@@ -176,7 +177,6 @@ def render(
         camera: Camera,
         gm: GaussianModel,
         global_size: float = 1.0,
-        sh_degree: int = 0,
         background_depth: float = 20.0,
         color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
     view_mat = camera.get_view_matrix()
@@ -185,15 +185,15 @@ def render(
     cx, cy = camera.get_principal()
 
     if color is None:
-        color = torch.zeros(3, device=gm.get_means.device)
+        color = torch.zeros(3, device=gm.get_xyz.device)
 
     start = time.time()
 
     xys, depths, radii, conics, compensation, num_tiles_hit, conv3d = _ProjectGaussians.apply(
-        gm.get_means,
-        gm.get_scales,
+        gm.get_xyz,
+        gm.get_scaling,
         global_size,
-        gm.get_quats,
+        gm.get_rotation,
         view_mat,
         focalx,
         focaly,
@@ -214,8 +214,8 @@ def render(
         radii,
         conics,
         num_tiles_hit,
-        gm.get_colors(sh_degree, camera.get_camera_position()),
-        gm.get_opacities,
+        gm.get_colors(camera.get_camera_position()),
+        gm.get_opacity,
         height,
         width,
         BLOCK_WIDTH,

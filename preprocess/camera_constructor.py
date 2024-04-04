@@ -1,10 +1,12 @@
 from pathlib import Path
 import numpy as np
+from typing import Optional
 
 import torch
-from isosplat.camera import Camera
 
-import preprocess.colmap_loader as prep
+from isosplat.camera import Camera
+import preprocess.colmap_loader as cl
+from utils.graphics_utils import BasicPointCloud
 
 
 def create_camera_from_cam_file(width: int, height: int, cam_path: Path, device: torch.device) -> Camera:
@@ -27,7 +29,7 @@ def create_camera_from_cam_file(width: int, height: int, cam_path: Path, device:
     return camera
 
 
-def create_camera_from_sfm_data(cam_data: prep.Camera, img_data: prep.Image, device: torch.device) -> Camera:
+def create_camera_from_sfm_data(cam_data: cl.Camera, img_data: cl.Image, device: torch.device) -> Camera:
     if img_data.camera_id is not cam_data.id:
         raise Exception(f"image_data.camera_id: {img_data.camera_id}, and cam_data.id: {cam_data.id} are not the same")
     

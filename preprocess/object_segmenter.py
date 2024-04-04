@@ -5,7 +5,8 @@ import os
 import torch
 from torch import Tensor
 
-from isosplat.utils import PointCloud, Data, DataList
+from isosplat.utils import Data, DataList
+from utils.graphics_utils import BasicPointCloud
 from preprocess.colmap_loader import Image
 from preprocess.image_loader import image_path_to_tensor, save_img_from_tensor
 
@@ -14,7 +15,7 @@ class ObjectSegmenter:
     def __init__(self, segment_path: Path):
         self.segment_path = segment_path
 
-    def segment_objects(self, data: Data, point_cloud_id: dict[int, int], point_cloud: PointCloud, sfm_images: dict[int, Image], device: torch.device):
+    def segment_objects(self, data: Data, point_cloud_id: dict[int, int], point_cloud: BasicPointCloud, sfm_images: dict[int, Image], device: torch.device):
         # xzys, _, errors = point_cloud
 
         image_segment_masks = {}
