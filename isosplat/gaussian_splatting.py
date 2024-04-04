@@ -161,7 +161,7 @@ class GaussianSplatting:
             data_itr = 0
             self.gaussian_model.update_learning_rate(itr)
 
-            if itr % 2 == 0:
+            if itr % 1000 == 0:
                 self.gaussian_model.oneupSHdegree()
 
             bg = torch.rand(3, device=self.device) if self.optimzable_params.random_background else self.background
