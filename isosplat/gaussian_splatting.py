@@ -159,7 +159,7 @@ class GaussianSplatting:
             average_image_loss = 0
             average_loss = 0
             data_itr = 0
-            self.gaussian_model.update_learning_rate(itr)
+            self.gaussian_model.spatial_lr_scale = self.gaussian_model.update_learning_rate(itr)
 
             if itr % 1000 == 0:
                 self.gaussian_model.oneupSHdegree()
@@ -209,6 +209,7 @@ class GaussianSplatting:
                         max_screen_size = 2000 if itr > self.optimzable_params.opacity_reset_interval else None
                         extent = 200  # todo check
                         culls, clones, splits = self.gaussian_model.densify_and_prune(
+                            position_grads=_ProjectGaussians.getPositionalGradient(),
                             max_grad=self.optimzable_params.densify_grad_threshold,
                             min_opacity=0.005,
                             extent=extent,
