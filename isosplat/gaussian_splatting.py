@@ -138,7 +138,7 @@ class GaussianSplatting:
 
         elif pcd:
             print("Creating gaussians from SFM point cloud")
-            gaussians = self.gaussian_model.create_from_pcd(pcd, 0.0001)
+            gaussians = self.gaussian_model.create_from_pcd(pcd, 1.0)
         else: # todo
             print("Randomly initialize gaussians")
             # gaussians = self.gaussian_model.create_from_random(splats, 0.0001)
@@ -159,7 +159,7 @@ class GaussianSplatting:
             average_image_loss = 0
             average_loss = 0
             data_itr = 0
-            self.gaussian_model.spatial_lr_scale = self.gaussian_model.update_learning_rate(itr)
+            lr = self.gaussian_model.update_learning_rate(itr)
 
             if itr % 1000 == 0:
                 self.gaussian_model.oneupSHdegree()
@@ -212,6 +212,7 @@ class GaussianSplatting:
                             position_grads=_ProjectGaussians.getPositionalGradient(),
                             max_grad=self.optimzable_params.densify_grad_threshold,
                             min_opacity=0.005,
+                            lr=lr,
                             extent=extent,
                             max_screen_size=max_screen_size)
                         self.culls += culls
