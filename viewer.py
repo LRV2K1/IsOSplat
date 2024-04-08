@@ -28,6 +28,16 @@ class RendererThread:
         self.camera = Camera(1200, 800, 1085, 1085, 600, 400, device)
         # self.camera = Camera(400, 400, 480, 480, 200, 200, device)
 
+        self.flip_mat = torch.tensor(
+            [
+                [-1.0, 0.0, 0.0, 0],
+                [0.0, -1.0, 0.0, 0],
+                [0.0, 0.0, 1.0, 0],
+                [0.0, 0.0, 0.0, 1.0]
+            ],
+            device=device
+        )
+
         self.anglh = 0.0
         self.anglv = 0.0
         self.dis = 8.0
@@ -41,6 +51,8 @@ class RendererThread:
         self.background: Tensor = torch.ones(3, device=device)
         self.other_background: Tensor = torch.zeros(3, device=device)
 
+        self._update_camera()
+
     def toggle_background(self):
         self.background, self.other_background = self.other_background, self.background
 
@@ -52,9 +64,9 @@ class RendererThread:
         self._update_camera()
 
     def add_angle(self, anglh: float, anglv: float):
-        self.anglh -= anglh
+        self.anglh += anglh
         self.anglh = self.anglh % (2 * math.pi)
-        self.anglv -= anglv
+        self.anglv += anglv
         self.anglv = min(self.anglv, 0.5*math.pi)
         self.anglv = max(self.anglv, -0.5*math.pi)
         self._update_camera()
@@ -72,6 +84,7 @@ class RendererThread:
 
     def _update_camera(self):
         self.camera.orbit(self.x, self.y, self.z, self.dis, self.anglh, self.anglv)
+        self.camera.rotation_mat = torch.matmul(self.flip_mat, self.camera.rotation_mat)
 
     def render(self, width: int, height: int) -> tuple[Image, Image]:
         out_img, out_depth, _, _ = self.renderer.render(self.camera, self.size, self.depth, self.background)
@@ -192,8 +205,9 @@ class Viewer:
         if not self.dragging or not self.drag_space:
             return
 
-        dx = float(self.last_x - event.x)/25.0
-        dy = float(event.y - self.last_y)/25.0
+        dx = float(self.last_x - event.x)/50.0
+        dy = float(event.y - self.last_y)/50.0
+        self.renderer.add_angle(dx, dy)
         self.renderer.add_angle(dx, dy)
 
         self.last_x = event.x

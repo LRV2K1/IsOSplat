@@ -120,6 +120,7 @@ class GaussianSplatting:
 
             self.gaussian_model.partial_restore(
                 (
+                    4,
                     xyz,
                     features_dc,
                     features_rest,
@@ -271,7 +272,7 @@ class GaussianSplatting:
             color: Optional[Tensor] = None
     ) -> tuple[Tensor, Tensor, float, float]:
         with torch.no_grad():
-            out_img, _, out_depth, t0, t1 = render(camera, self.gaussian_model, size, 4, background_depth, color)
+            out_img, _, out_depth, t0, t1 = render(camera, self.gaussian_model, size, background_depth, color)
             return out_img, out_depth, t0, t1
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
