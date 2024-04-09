@@ -7,10 +7,14 @@ import torch
 from torch import Tensor
 
 
-def image_path_to_tensor(image_path: Path, device: torch.device) -> tuple[Tensor, Tensor]:
+def image_path_to_tensor(image_path: Path, device: torch.device, image_scale = 1.0) -> tuple[Tensor, Tensor]:
     import torchvision.transforms as transforms
 
     img = Image.open(image_path)
+    width = int(img.width * image_scale)
+    height = int(img.height * image_scale)
+    img = img.resize((width, height))
+
     transform = transforms.ToTensor()
     img_transform = transform(img)
     img_tensor = img_transform.permute(1, 2, 0)[..., :3]

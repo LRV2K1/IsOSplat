@@ -10,11 +10,14 @@
 #
 
 import torch
+from torch import Tensor
 import sys
 from datetime import datetime
 import numpy as np
 import random
 import matplotlib
+from PIL import Image
+
 
 def inverse_sigmoid(x):
     return torch.log(x/(1-x))
@@ -132,3 +135,13 @@ def safe_state(silent):
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.set_device(torch.device("cuda:0"))
+
+
+def image_rescale(tensor: Tensor, scale: float, device: torch.device) -> Tensor:
+    width, height = tensor.shape[0], tensor.shape[1]
+    new_width, new_height = int(width * scale), int(height * scale)
+
+    image = Image.fromarray((tensor.detach().cpu().numpy() * 255).astype(np.uint8))
+    image = image.resize((new_height, new_width))
+    return torch.tensor(np.array(image), device=device) / 255.0
+    

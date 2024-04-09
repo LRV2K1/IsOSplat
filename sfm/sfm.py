@@ -23,6 +23,7 @@ class SFM:
     def __init__(self, img_path: Path):
         self.img_path: Path = img_path
         self.sfm_path: Path = img_path / "sfm"
+        self.sfm_text_path: Path = img_path / "sfm_txt"
         self.db_path: Path = self.sfm_path / "database.db"
 
         self.reconstruction: pycolmap.Reconstruction = None
@@ -72,7 +73,7 @@ class SFM:
         except:
             raise Exception("SFM could not reconstruct the data")
 
-        self.reconstruction.write_text(self.sfm_path)
+        self.reconstruction.write_text(self.sfm_text_path)
 
     def _sfm(self, clean: bool = False):
         if not os.path.exists(self.sfm_path):
@@ -188,10 +189,10 @@ def main(
 ) -> None:
     sfm = SFM(img_path)
     sfm.sfm(clean)
-    sfm.get_point_cloud()
-    sfm.get_camera_data()
-    sfm.get_image_data()
-    sfm.get_image()
+    #sfm.get_point_cloud()
+    #sfm.get_camera_data()
+    #sfm.get_image_data()
+    #sfm.get_image()
 
 
 if __name__ == "__main__":

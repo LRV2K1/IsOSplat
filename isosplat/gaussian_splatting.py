@@ -18,6 +18,7 @@ from scene.gaussian_model import GaussianModel
 from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map
 
 from utils.graphics_utils import BasicPointCloud
+from utils.general_utils import image_rescale
 from isosplat.utils import DataList, Data
 from isosplat import render
 
@@ -151,15 +152,36 @@ class GaussianSplatting:
         self.optimzable_params = optimizable_params
         self.gaussian_model.training_setup(optimizable_params)
 
+    def rescale_data(self, data: Data, scale: float) -> Data:
+        use_data = data.copy()
+        for name in use_data:
+            nv_view, cam, _ = use_data[name]
+            new_add_data = {}
+            new_view = image_rescale(nv_view, scale, self.device)
+            use_data[name] = new_view, cam, new_add_data
+        return use_data
+
     def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None):
         n_data = len(data_list)
         iterations = self.optimzable_params.iterations
+        image_scale = 0.25
+
+        use_data = self.rescale_data(data, image_scale)
 
         for itr in range(1, iterations+1):
             average_image_loss = 0
             average_loss = 0
             data_itr = 0
             lr = self.gaussian_model.update_learning_rate(itr)
+            
+            if itr == 250:
+                print("rescale")
+                image_scale = 0.5
+                use_data = self.rescale_data(data, image_scale)
+            if itr == 500:
+                print("rescale")
+                image_scale = 1
+                use_data = data
 
             if itr % 1000 == 0:
                 self.gaussian_model.oneupSHdegree()
@@ -168,13 +190,13 @@ class GaussianSplatting:
 
             random.shuffle(data_list)
             for name in data_list:
-                gt_view, camera, add_data = data[name]
+                gt_view, camera, add_data = use_data[name]
 
                 bg_depth = 20.0
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
                 
-                nv_view, nv_alpha, nv_depth, t0, t1 = render(camera, self.gaussian_model, background_depth=bg_depth, color=bg)
+                nv_view, nv_alpha, nv_depth, t0, t1 = render(camera, self.gaussian_model, background_depth=bg_depth, color=bg, image_scale=image_scale)
 
                 loss, image_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
                 # t2 = self.optimizer.back_propagate_loss(loss)

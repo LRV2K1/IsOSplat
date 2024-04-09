@@ -178,11 +178,19 @@ def render(
         gm: GaussianModel,
         global_size: float = 1.0,
         background_depth: float = 20.0,
-        color: Optional[Tensor] = None) -> tuple[Tensor, Tensor, Tensor, float, float]:
+        color: Optional[Tensor] = None,
+        image_scale: float = 1.0) -> tuple[Tensor, Tensor, Tensor, float, float]:
     view_mat = camera.get_view_matrix()
     focalx, focaly = camera.get_focal()
     width, height = camera.get_size()
     cx, cy = camera.get_principal()
+
+    width = int(width * image_scale)
+    height = int(height * image_scale)
+    focalx *= image_scale
+    focaly *= image_scale
+    cx *= image_scale
+    cy *= image_scale
 
     if color is None:
         color = torch.zeros(3, device=gm.get_xyz.device)
