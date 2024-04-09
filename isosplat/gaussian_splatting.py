@@ -76,24 +76,24 @@ class GaussianSplatting:
         denom = torch.zeros(7, 1, dtype=torch.int32, device=self.device)
         max_radii2D = torch.zeros(7, device=self.device)
 
-        tensors = {
-            "means": means,
-            "scales": scales,
-            "opacities": opacities,
-            "sh_coeffs": sh_coeffs,
-            "quats": quats,
-            "acc_grad": acc_grad,
-            "denom": denom,
-            "max_radii2D": max_radii2D
-        }
-        values = {
-            "num_points": 7,
-            "mean_lr": 0
-        }
-        # if add_axis:
-        #     self.gaussian_model.add_gaussians((tensors, values))
-        # else:
-        #     self.gaussian_model.restore((tensors, values))
+        model_args = (
+            means,
+            sh_coeffs[:,0:1,:],
+            sh_coeffs[:,1:,:],
+            scales,
+            quats,
+            opacities,
+            max_radii2D,
+            acc_grad,
+            denom,
+            {},
+            1.0
+        )
+
+        if add_axis:
+            self.gaussian_model.append_gaussians(model_args)
+        else:
+            self.gaussian_model.partial_restore(model_args)
 
     def init_gaussians(
             self,
@@ -131,7 +131,7 @@ class GaussianSplatting:
                     acc_grad,
                     denom,
                     {},
-                    0.0001
+                    1.0
                 )
             )
 
@@ -140,16 +140,15 @@ class GaussianSplatting:
         elif pcd:
             print("Creating gaussians from SFM point cloud")
             gaussians = self.gaussian_model.create_from_pcd(pcd, 1.0)
-        else: # todo
+        else:
             print("Randomly initialize gaussians")
-            # gaussians = self.gaussian_model.create_from_random(splats, 0.0001)
+            gaussians = self.gaussian_model.create_from_random(splats, 10.0)
         print(f"Initialized {gaussians} gaussians")
         if logger is not None:
             logger.log_scalar("n_gaussians", gaussians)
 
     def init_optimizer(self, optimizable_params: GroupParams):
         self.optimzable_params = optimizable_params
-        # self.optimizer = self.gaussian_model.init_optimizer(optimizable_params)
         self.gaussian_model.training_setup(optimizable_params)
 
     def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None):

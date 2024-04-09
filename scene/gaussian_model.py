@@ -143,7 +143,7 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+    def create_from_pcd(self, pcd: BasicPointCloud, spatial_lr_scale: float) -> int:
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         # fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
@@ -168,6 +168,44 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device=self.device)
+
+        return self._xyz.shape[0]
+
+    def create_from_random(self, splats: int, spatial_lr_scale: float) -> int:
+        self.spatial_lr_scale = spatial_lr_scale
+        self._xyz = nn.Parameter(((torch.rand(splats, 3, device=self.device) - 0.5) * spatial_lr_scale).requires_grad(True))
+        self._features_dc = nn.Parameter((self.inverse_sigmoid_activation(torch.ones(splats, 1, 3, device=self.device) * 0.5)).requires_grad(True))
+        self._features_rest = nn.Parameter((torch.zeros(splats, 24, 3, device=self.device)).requires_grad(True))
+        self._scaling = nn.Parameter((self.scaling_inverse_activation(torch.ones(splats, 3, device=self.device) * 0.01 * spatial_lr_scale)).requires_grad(True))
+        self._rotation = nn.Parameter((torch.zeros(splats, 4, device=self.device)).requires_grad(True))
+        self._rotation[:, 0] = 1
+        self._opacity = nn.Parameter((self.inverse_sigmoid_activation(0.1 * torch.ones(splats, 1, device=self.device))).requires_grad(True))
+        self.max_radii2D = torch.zeros(splats, device=self.device)
+
+        return splats
+    
+    def append_gaussians(self, model_args):
+        (_xyz, 
+        _features_dc, 
+        _features_rest,
+        _scaling, 
+        _rotation, 
+        _opacity,
+        max_radii2D, 
+        xyz_gradient_accum, 
+        denom,
+        opt_dict, 
+        spatial_lr_scale) = model_args
+
+        self._xyz = torch.cat((self._xyz, _xyz), dim=0)
+        self._features_dc = torch.cat((self._features_dc, _features_dc), dim=0)
+        self._features_rest = torch.cat((self._features_rest, _features_rest), dim=0)
+        self._scaling = torch.cat((self._scaling, _scaling), dim=0)
+        self._rotation = torch.cat((self._rotation, _rotation), dim=0)
+        self._opacity = torch.cat((self._opacity, _opacity), dim=0)
+        self.max_radii2D = torch.cat((self.max_radii2D, max_radii2D), dim=0)
+        # self.xyz_gradient_accum = torch.cat((self.xyz_gradient_accum, xyz_gradient_accum), dim=0)
+        # self.denom = torch.cat((self.denom, denom), dim=0)
 
     def training_setup(self, training_args: GroupParams):
         self.percent_dense = training_args.percent_dense
