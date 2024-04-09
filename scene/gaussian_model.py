@@ -173,13 +173,15 @@ class GaussianModel:
 
     def create_from_random(self, splats: int, spatial_lr_scale: float) -> int:
         self.spatial_lr_scale = spatial_lr_scale
-        self._xyz = nn.Parameter(((torch.rand(splats, 3, device=self.device) - 0.5) * spatial_lr_scale).requires_grad(True))
-        self._features_dc = nn.Parameter((self.inverse_sigmoid_activation(torch.ones(splats, 1, 3, device=self.device) * 0.5)).requires_grad(True))
-        self._features_rest = nn.Parameter((torch.zeros(splats, 24, 3, device=self.device)).requires_grad(True))
-        self._scaling = nn.Parameter((self.scaling_inverse_activation(torch.ones(splats, 3, device=self.device) * 0.01 * spatial_lr_scale)).requires_grad(True))
-        self._rotation = nn.Parameter((torch.zeros(splats, 4, device=self.device)).requires_grad(True))
-        self._rotation[:, 0] = 1
-        self._opacity = nn.Parameter((self.inverse_sigmoid_activation(0.1 * torch.ones(splats, 1, device=self.device))).requires_grad(True))
+        self._xyz = nn.Parameter(((torch.rand(splats, 3, device=self.device) - 0.5) * spatial_lr_scale).requires_grad_(True))
+        self._features_dc = nn.Parameter((self.inverse_sigmoid_activation(torch.ones(splats, 1, 3, device=self.device) * 0.5)).requires_grad_(True))
+        self._features_rest = nn.Parameter((torch.zeros(splats, 24, 3, device=self.device)).requires_grad_(True))
+        self._scaling = nn.Parameter((self.scaling_inverse_activation(torch.ones(splats, 3, device=self.device) * 0.01 * spatial_lr_scale)).requires_grad_(True))
+
+        rotation = (torch.zeros(splats, 4, device=self.device))
+        rotation[:, 0] = 1
+        self._rotation = nn.Parameter(rotation.requires_grad_(True))
+        self._opacity = nn.Parameter((self.inverse_sigmoid_activation(0.1 * torch.ones(splats, 1, device=self.device))).requires_grad_(True))
         self.max_radii2D = torch.zeros(splats, device=self.device)
 
         return splats
