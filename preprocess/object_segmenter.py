@@ -63,7 +63,8 @@ class ObjectSegmenter:
             print(f"{n_discarded} segments discarded")
 
         # [([(image_id, segment_id)], [feature_id])]
-        objects = self.combine_segments(segments_map, features_map, 5)
+        # objects = self.combine_segments(segments_map, features_map, 5)
+        objects = self.combine_segments_percentage(segments_map, features_map, 0.25)
         print(f"Number objects: {len(objects)}")
 
         object_masks: list[dict[int, Tensor]] = []
@@ -86,7 +87,7 @@ class ObjectSegmenter:
         id = 0
         for masks in object_masks:
             for image_id in masks:
-                filePath = f"segments/new_segments2"
+                filePath = f"segments/new_segments4"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
@@ -134,7 +135,6 @@ class ObjectSegmenter:
                     pids = segments_map[image_key][segment_key]
                     o_pids = segments_map[o_image_key][o_segment_key]
                     n_pids = remove_duplicates(pids + o_pids)
-                    # print(f"{len(pids)} | {len(o_pids)} | {len(n_pids)}")
                     segments_map[image_key][segment_key] = n_pids       # add points to segment
                     for pid in n_pids:                                  # add segment to points
                         features_map[pid].append((image_key, segment_key))
@@ -153,6 +153,72 @@ class ObjectSegmenter:
                     combined_segments.append((c_segments[(image_key, segment_key)], segments_map[image_key][segment_key]))
                 
         return combined_segments
+
+
+    @staticmethod                                                                                                                                       # [([(image_id, segment_id)], [feature_id])]
+    def combine_segments_percentage(segments_map: dict[int, dict[int, list[int]]], features_map: dict[int, list[tuple[int, int]]], feature_threshold: float) -> list[tuple[list[tuple[int, int]], list[int]]]:
+        print("Combining segments")
+        done_segments: dict[tuple[int, int], bool] = {}
+        
+        c_segments: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        combined_segments: list[tuple[list[tuple[int, int]], list[int]]] = []
+
+        # create segments queue
+        segment_queue: list[tuple[int, int]] = []
+        for image_key in segments_map:
+            for segment_key in segments_map[image_key]:
+                segment_queue.append((image_key, segment_key))
+        print(f"Initial segment queue lenght: {len(segment_queue)}")
+
+        while len(segment_queue) > 0:
+            image_key, segment_key = segment_queue.pop()        # pick a segment
+            if (image_key, segment_key) in done_segments:
+                continue
+            if (image_key, segment_key) not in c_segments:
+                c_segments[(image_key, segment_key)] = [(image_key, segment_key)]
+
+            other_segments: dict[tuple[int, int], int] = {}
+            for pid in segments_map[image_key][segment_key]:    # for every feature
+                p_segments = features_map[pid]
+                for p_segment in p_segments:                    # go over every segment that feature is in
+                    if p_segment in done_segments or \
+                        p_segment == (image_key, segment_key):  # if the segment is done, skip it
+                        continue
+                    if p_segment in other_segments:             # if segment already seen before
+                        other_segments[p_segment] += 1          # add point
+                    else:                                       # if segment not seen before
+                        other_segments[p_segment] = 1           # initialize segment
+            
+            added = False
+            for segment in other_segments:                              # go over all other segments
+                o_image_key, o_segment_key = segment
+                other_percentage = float(other_segments[segment]) / len(segments_map[o_image_key][o_segment_key])
+                percentage = float(other_segments[segment]) / len(segments_map[image_key][segment_key])
+                if other_percentage >= feature_threshold or percentage >= feature_threshold: # check feature threshold
+                    done_segments[segment] = True
+                    added = True
+                    pids = segments_map[image_key][segment_key]
+                    o_pids = segments_map[o_image_key][o_segment_key]
+                    n_pids = remove_duplicates(pids + o_pids)
+                    segments_map[image_key][segment_key] = n_pids       # add points to segment
+                    for pid in n_pids:                                  # add segment to points
+                        features_map[pid].append((image_key, segment_key))
+                        features_map[pid] = remove_duplicates(features_map[pid])
+                    # store combined segments
+                    new_segments = [segment]
+                    if segment in c_segments:
+                        new_segments = c_segments[segment]
+                    c_segments[(image_key, segment_key)] = remove_duplicates(c_segments[(image_key, segment_key)] + new_segments)
+            if added:
+                segment_queue.append((image_key, segment_key))          # segment added to queue
+            else:
+                done_segments[(image_key, segment_key)] = True          # segment done
+                print(f"done: {len(segments_map[image_key][segment_key])}")
+                if len(segments_map[image_key][segment_key]) > 0:
+                    combined_segments.append((c_segments[(image_key, segment_key)], segments_map[image_key][segment_key]))
+                
+        return combined_segments
+
 
 
     def segment_objects(self, data: Data, point_cloud_id: dict[int, int], point_cloud: BasicPointCloud, sfm_images: dict[int, Image], device: torch.device):
