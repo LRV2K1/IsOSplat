@@ -185,9 +185,10 @@ class PreProcessor:
         if logger is not None:
             logger.log_hparams(depth_parameters)
 
-        # if sfm_images is not None:
-        #     object_segmenter = ObjectSegmenter(self.segment_path)
-        #     object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
+        if sfm_images is not None:
+            object_segmenter = ObjectSegmenter(self.segment_path)
+            # object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
+            object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
 
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None
