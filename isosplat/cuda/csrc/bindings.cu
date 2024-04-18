@@ -4,6 +4,7 @@
 #include "helpers.cuh"
 #include "sh.cuh"
 #include "simple_knn.h"
+#include "mask_map.cuh"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 #include <cstdio>
@@ -690,4 +691,30 @@ distCUDA2(const torch::Tensor& points)
   SimpleKNN::knn(P, (float3*)points.contiguous().data<float>(), means.contiguous().data<float>());
 
   return means;
+}
+
+torch::Tensor
+extract_segment_features(
+        const unsigned width,
+        const unsigned height,
+        const torch::Tensor &mask,
+        const torch::Tensor &xys
+    ) {
+
+    const int num_points = xys.size(0);
+    const dim3 mask_size = {width, height, 1};
+
+    torch::Tensor xy_mask = torch::zeros({num_points}, mask.options());
+
+    extract_segment_features<<<
+        (num_points + N_THREADS - 1) / N_THREADS,
+        N_THREADS>>>(
+        num_points,
+        mask_size,
+        mask.contiguous().data_ptr<bool>(),
+        xys.contiguous().data_ptr<int>(),
+        xy_mask.contiguous().data_ptr<bool>()
+    );
+
+    return xy_mask;
 }

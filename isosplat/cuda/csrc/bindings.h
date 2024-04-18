@@ -208,3 +208,11 @@ std::
 
 torch::Tensor
 distCUDA2(const torch::Tensor& points);
+
+torch::Tensor
+extract_segment_features(
+        const unsigned width,
+        const unsigned height,
+        const torch::Tensor &mask,
+        const torch::Tensor &xys
+    );

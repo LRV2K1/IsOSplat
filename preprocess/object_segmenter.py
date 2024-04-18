@@ -7,6 +7,7 @@ import torch
 from torch import Tensor
 
 from isosplat.utils import Data, DataList
+import isosplat.cuda as _C
 from utils.graphics_utils import BasicPointCloud
 from preprocess.colmap_loader import Image
 from preprocess.image_loader import image_path_to_tensor, save_img_from_tensor
@@ -17,7 +18,6 @@ class ObjectSegmenter:
         self.segment_path = segment_path
 
     def segment_objects_new(self, data: Data, point_cloud_id: dict[int, int], point_cloud: BasicPointCloud, sfm_images: dict[int, Image], device: torch.device):
-        
         # image_id -> {segment_id -> [feature_id]}
         segments_map: dict[int, dict[int, list[int]]] = {}
         # feature_id -> [(image_id, segment_id)]
@@ -32,7 +32,7 @@ class ObjectSegmenter:
             ipids = sfm_image.point3D_ids
             ipids_mask = ipids >= 0
             ipids = ipids[ipids_mask]
-            xys = np.int32(sfm_image.xys)[ipids_mask.tolist()]
+            xys = torch.tensor(np.int32(sfm_image.xys)[ipids_mask.tolist()], device=device)
             
             n_segments = 0
             n_discarded = 0
@@ -44,16 +44,15 @@ class ObjectSegmenter:
                     continue
                 segment_id = int(filename.split('.')[0])
                 segment, _ = image_path_to_tensor(image_segment_path / filename, device)
-                segment_list = segment.tolist()
+                segment_mask = segment[:,:,0] > 0
+                xy_mask = _C.extract_segment_features(segment.shape[1], segment.shape[0], segment_mask, xys)
                 feature_list = []
-                for i in range(xys.shape[0]):               # collect all features of the segment
-                    x, y = xys[i]
-                    if segment_list[int(y)][int(x)][0] > 0:
-                        pid = ipids[i]
-                        feature_list.append(pid)
-                        if pid not in features_map:
-                            features_map[pid] = []
-                        features_map[pid].append((image_id, segment_id))
+                segment_ipids = ipids[xy_mask.cpu()]
+                for pid in segment_ipids:
+                    feature_list.append(pid)
+                    if pid not in features_map:
+                        features_map[pid] = []
+                    features_map[pid].append((image_id, segment_id))
                 if len(feature_list) > 0:
                     segment_dict[segment_id] = feature_list
                     n_segments += 1
