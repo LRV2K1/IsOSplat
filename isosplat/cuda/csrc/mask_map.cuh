@@ -12,7 +12,7 @@ __global__ void extract_segment_features(
 
 __global__ void padd_features(
     const int num_points,
-    const dim3 kernel_size,
+    const int kernel_size,
     const dim3 mask_size,
     const int* __restrict__ xys,
     const float* __restrict__ kernel,

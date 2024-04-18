@@ -144,6 +144,10 @@ class ObjectSegmenter:
         print("Creating object masks")
         object_masks: list[dict[int, Tensor]] = []
         object_id = 0
+
+        distribution = torch.tensor([[0.2, 0.4, 0.6, 0.8, 1.0, 0.8, 0.6, 0.4, 0.2]], device=device)
+        kernel = distribution * distribution.transpose(0,1)
+
         for segments, points in objects:
             print(f"Creating mask {object_id}")
             masks = {}
@@ -171,7 +175,7 @@ class ObjectSegmenter:
                         ipids = sfm_image.point3D_ids
                         ipids_mask = np_map(ipids)
                         xys = torch.tensor(np.int32(sfm_image.xys)[ipids_mask.tolist()], device=device)
-                        masks[image_id] = _C.padd_features(0, 0, masks[image_id], xys)
+                        masks[image_id] = _C.padd_features(kernel, masks[image_id], xys)
 
             print(f"{len(masks)} masks created for object {object_id}")
             object_id += 1

@@ -217,8 +217,7 @@ extract_segment_features(
 
 torch::Tensor
 padd_features(
-        const unsigned kernel_width,
-        const unsigned kernel_height,
+        const torch::Tensor &kernel,
         const torch::Tensor &mask,
         const torch::Tensor &xys
     );

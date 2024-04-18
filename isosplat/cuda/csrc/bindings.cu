@@ -719,17 +719,14 @@ extract_segment_features(
 
 torch::Tensor
 padd_features(
-        const unsigned kernel_width,
-        const unsigned kernel_height,
+        const torch::Tensor &kernel,
         const torch::Tensor &mask,
         const torch::Tensor &xys
     ) {
     
     const int num_points = xys.size(0);
     const dim3 mask_size = {mask.size(1), mask.size(0), 1};
-    const dim3 kernel_size = {kernel_width, kernel_height, 1};
-    
-    torch::Tensor kernel = torch::zeros({kernel_width, kernel_height}, mask.options());
+    const int kernel_size = kernel.size(0);
 
     padd_features<<<
         (num_points + N_THREADS - 1) / N_THREADS,
