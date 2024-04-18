@@ -170,10 +170,8 @@ class ObjectSegmenter:
                     if image_id in masks:
                         ipids = sfm_image.point3D_ids
                         ipids_mask = np_map(ipids)
-                        xys = np.int32(sfm_image.xys)[ipids_mask.tolist()]
-                        for i in range(xys.shape[0]):
-                            x, y = xys[i]
-                            masks[image_id][int(y)][int(x)] = 1
+                        xys = torch.tensor(np.int32(sfm_image.xys)[ipids_mask.tolist()], device=device)
+                        masks[image_id] = _C.padd_features(masks[image_id].shape[1], masks[image_id].shape[0], 0, 0, masks[image_id], xys)
 
             print(f"{len(masks)} masks created for object {object_id}")
             object_id += 1

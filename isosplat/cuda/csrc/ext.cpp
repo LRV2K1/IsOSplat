@@ -17,4 +17,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("get_tile_bin_edges", &get_tile_bin_edges_tensor);
     m.def("distCUDA2", &distCUDA2);
     m.def("extract_segment_features", &extract_segment_features);
+    m.def("padd_features", &padd_features);
 }

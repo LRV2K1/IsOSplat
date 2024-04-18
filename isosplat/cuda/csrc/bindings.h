@@ -216,3 +216,13 @@ extract_segment_features(
         const torch::Tensor &mask,
         const torch::Tensor &xys
     );
+
+torch::Tensor
+padd_features(
+        const unsigned width,
+        const unsigned height,
+        const unsigned kernel_width,
+        const unsigned kernel_height,
+        const torch::Tensor &mask,
+        const torch::Tensor &xys
+    );
