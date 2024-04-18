@@ -695,14 +695,12 @@ distCUDA2(const torch::Tensor& points)
 
 torch::Tensor
 extract_segment_features(
-        const unsigned width,
-        const unsigned height,
         const torch::Tensor &mask,
         const torch::Tensor &xys
     ) {
 
     const int num_points = xys.size(0);
-    const dim3 mask_size = {width, height, 1};
+    const dim3 mask_size = {mask.size(1), mask.size(0), 1};
 
     torch::Tensor xy_mask = torch::zeros({num_points}, mask.options());
 
@@ -721,8 +719,6 @@ extract_segment_features(
 
 torch::Tensor
 padd_features(
-        const unsigned width,
-        const unsigned height,
         const unsigned kernel_width,
         const unsigned kernel_height,
         const torch::Tensor &mask,
@@ -730,7 +726,7 @@ padd_features(
     ) {
     
     const int num_points = xys.size(0);
-    const dim3 mask_size = {width, height, 1};
+    const dim3 mask_size = {mask.size(1), mask.size(0), 1};
     const dim3 kernel_size = {kernel_width, kernel_height, 1};
     
     torch::Tensor kernel = torch::zeros({kernel_width, kernel_height}, mask.options());

@@ -45,7 +45,7 @@ class ObjectSegmenter:
                 segment_id = int(filename.split('.')[0])
                 segment, _ = image_path_to_tensor(image_segment_path / filename, device)
                 segment_mask = segment[:,:,0] > 0
-                xy_mask = _C.extract_segment_features(segment.shape[1], segment.shape[0], segment_mask, xys)
+                xy_mask = _C.extract_segment_features(segment_mask, xys)
                 feature_list = []
                 segment_ipids = ipids[xy_mask.cpu()]
                 for pid in segment_ipids:
@@ -171,7 +171,7 @@ class ObjectSegmenter:
                         ipids = sfm_image.point3D_ids
                         ipids_mask = np_map(ipids)
                         xys = torch.tensor(np.int32(sfm_image.xys)[ipids_mask.tolist()], device=device)
-                        masks[image_id] = _C.padd_features(masks[image_id].shape[1], masks[image_id].shape[0], 0, 0, masks[image_id], xys)
+                        masks[image_id] = _C.padd_features(0, 0, masks[image_id], xys)
 
             print(f"{len(masks)} masks created for object {object_id}")
             object_id += 1
