@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 import os
+from typing import Optional
 
 import torch
 from torch import Tensor
@@ -67,27 +68,12 @@ class ObjectSegmenter:
         objects = self.combine_segments_percentage(segments_map, features_map, 0.25)
         print(f"Number objects: {len(objects)}")
 
-        object_masks: list[dict[int, Tensor]] = []
-        for segments, points in objects:
-            masks = {}
-            for image_id, segment_id in segments:
-                name = sfm_images[image_id].name.split('.')[0]
-                if image_id not in masks:
-                    gt_view, _, _ = data[name]
-                    mask = torch.zeros_like(gt_view[:,:,0], device=device)
-                    masks[image_id] = mask
-                image_segment_path = self.segment_path / name
-                filename = str(segment_id)
-                segment, _ = image_path_to_tensor(image_segment_path / f"{filename}.png", device)
-                segment = segment[:,:,0]
-                segment_mask = segment > 0
-                masks[image_id][segment_mask] = 1
-            object_masks.append(masks)
+        object_masks: list[dict[int, Tensor]] = self.create_object_masks(objects, data, sfm_images, device, 1)
 
         id = 0
         for masks in object_masks:
             for image_id in masks:
-                filePath = f"segments/new_segments4"
+                filePath = f"segments/new_segments5"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
@@ -153,6 +139,48 @@ class ObjectSegmenter:
                     combined_segments.append((c_segments[(image_key, segment_key)], segments_map[image_key][segment_key]))
                 
         return combined_segments
+
+
+    def create_object_masks(self, objects: list[tuple[list[tuple[int, int]], list[int]]], data: Data, sfm_images: dict[int, Image], device: torch.device, point_padd: Optional[int] = None) -> list[dict[int, Tensor]]:   
+        print("Creating object masks")
+        object_masks: list[dict[int, Tensor]] = []
+        object_id = 0
+        for segments, points in objects:
+            print(f"Creating mask {object_id}")
+            masks = {}
+            for image_id, segment_id in segments:
+                sfm_image = sfm_images[image_id]
+                name = sfm_image.name.split('.')[0]
+
+                if image_id not in masks:
+                    gt_view, _, _ = data[name]
+                    mask = torch.zeros_like(gt_view[:,:,0], device=device)
+                    masks[image_id] = mask
+                image_segment_path = self.segment_path / name
+                filename = str(segment_id)
+                segment, _ = image_path_to_tensor(image_segment_path / f"{filename}.png", device)
+                segment = segment[:,:,0]
+                segment_mask = segment > 0
+                masks[image_id][segment_mask] = 1
+
+            if point_padd:
+                print("Padd mask with feature points")
+                np_map = np.vectorize(lambda a : True if a in points else False)
+                for sfm_image in sfm_images.values():
+                    image_id = sfm_image.id
+                    if image_id in masks:
+                        ipids = sfm_image.point3D_ids
+                        ipids_mask = np_map(ipids)
+                        xys = np.int32(sfm_image.xys)[ipids_mask.tolist()]
+                        for i in range(xys.shape[0]):
+                            x, y = xys[i]
+                            masks[image_id][int(y)][int(x)] = 1
+
+            print(f"{len(masks)} masks created for object {object_id}")
+            object_id += 1
+            object_masks.append(masks)
+
+        return object_masks
 
 
     @staticmethod                                                                                                                                       # [([(image_id, segment_id)], [feature_id])]
