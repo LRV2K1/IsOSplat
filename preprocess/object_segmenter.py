@@ -22,7 +22,7 @@ class ObjectSegmenter:
         segments_map: dict[int, dict[int, list[int]]] = {}
         # feature_id -> [(image_id, segment_id)]
         features_map: dict[int, list[tuple[int, int]]] = {}
-        final_masks: dict[int, Tensor] = {}
+        final_masks: dict[tuple[int, int], Tensor] = {}
 
         for sfm_image in sfm_images.values():
             name = sfm_image.name.split('.')[0]
@@ -55,6 +55,7 @@ class ObjectSegmenter:
 
                 feature_list = []
                 segment_ipids = ipids[xy_mask.cpu()]
+                final_masks[(image_id, segment_id)] = segment_mask
                 for pid in segment_ipids:
                     feature_list.append(pid)
                     if pid not in features_map:
@@ -83,8 +84,8 @@ class ObjectSegmenter:
                 n_discarded += 1
             filePath = f"segments/total"
             save_img_from_tensor(total_mask, filePath, f"{image_id}")
-            
-            final_masks[image_id] = total_mask
+            final_masks[(image_id, -1)] = segment_mask
+
             segments_map[image_id] = segment_dict
             print(f"{n_segments} segments extracted")
             print(f"{n_discarded} segments discarded")
@@ -186,17 +187,7 @@ class ObjectSegmenter:
                     gt_view, _, _ = data[name]
                     mask = torch.zeros_like(gt_view[:,:,0], device=device)
                     masks[image_id] = mask
-                if segment_id != -1:
-                    image_segment_path = self.segment_path / name
-                    filename = str(segment_id)
-                    segment, _ = image_path_to_tensor(image_segment_path / f"{filename}.png", device)
-                    segment = segment[:,:,0]
-                else:
-                    segment = torch.zeros_like(gt_view[:,:,0], device=device)
-                    segment_mask = final_masks[image_id] <= 0
-                    segment[segment_mask] = 1
-
-                segment_mask = segment > 0
+                segment_mask = final_masks[(image_id, segment_id)]
                 masks[image_id][segment_mask] = 1
 
             if point_padd:
