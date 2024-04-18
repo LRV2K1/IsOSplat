@@ -22,6 +22,7 @@ class ObjectSegmenter:
         segments_map: dict[int, dict[int, list[int]]] = {}
         # feature_id -> [(image_id, segment_id)]
         features_map: dict[int, list[tuple[int, int]]] = {}
+        final_masks: dict[int, Tensor] = {}
 
         for sfm_image in sfm_images.values():
             name = sfm_image.name.split('.')[0]
@@ -38,6 +39,10 @@ class ObjectSegmenter:
             n_discarded = 0
             segment_dict = {}
             image_segment_path = self.segment_path / name
+
+            gt_view, _, _ = data[name]
+            total_mask = torch.zeros_like(gt_view[:,:,0], device=device)
+
             for file in os.listdir(image_segment_path):     # for every segment in the image
                 filename = os.fsdecode(file)
                 if not filename.endswith(".png"):
@@ -46,6 +51,8 @@ class ObjectSegmenter:
                 segment, _ = image_path_to_tensor(image_segment_path / filename, device)
                 segment_mask = segment[:,:,0] > 0
                 xy_mask = _C.extract_segment_features(segment_mask, xys)
+                total_mask[segment_mask] = 1
+
                 feature_list = []
                 segment_ipids = ipids[xy_mask.cpu()]
                 for pid in segment_ipids:
@@ -58,6 +65,26 @@ class ObjectSegmenter:
                     n_segments += 1
                 else:
                     n_discarded += 1
+            
+            # empty mask
+            segment_mask = total_mask <= 0
+            xy_mask = _C.extract_segment_features(segment_mask, xys)
+            feature_list = []
+            segment_ipids = ipids[xy_mask.cpu()]
+            for pid in segment_ipids:
+                feature_list.append(pid)
+                if pid not in features_map:
+                    features_map[pid] = []
+                # features_map[pid].append((image_id, -1))
+            if len(feature_list) > 0:
+                # segment_dict[-1] = feature_list
+                n_segments += 1
+            else:
+                n_discarded += 1
+            filePath = f"segments/total"
+            save_img_from_tensor(total_mask, filePath, f"{image_id}")
+            
+            final_masks[image_id] = total_mask
             segments_map[image_id] = segment_dict
             print(f"{n_segments} segments extracted")
             print(f"{n_discarded} segments discarded")
@@ -67,12 +94,12 @@ class ObjectSegmenter:
         objects = self.combine_segments_percentage(segments_map, features_map, 0.25)
         print(f"Number objects: {len(objects)}")
 
-        object_masks: list[dict[int, Tensor]] = self.create_object_masks(objects, data, sfm_images, device, 1)
+        object_masks: list[dict[int, Tensor]] = self.create_object_masks(objects, data, sfm_images, final_masks, device, 1)
 
         id = 0
         for masks in object_masks:
             for image_id in masks:
-                filePath = f"segments/new_segments5"
+                filePath = f"segments/new_segments6"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
@@ -140,7 +167,7 @@ class ObjectSegmenter:
         return combined_segments
 
 
-    def create_object_masks(self, objects: list[tuple[list[tuple[int, int]], list[int]]], data: Data, sfm_images: dict[int, Image], device: torch.device, point_padd: Optional[int] = None) -> list[dict[int, Tensor]]:   
+    def create_object_masks(self, objects: list[tuple[list[tuple[int, int]], list[int]]], data: Data, sfm_images: dict[int, Image], final_masks: dict[int, Tensor], device: torch.device, point_padd: Optional[int] = None) -> list[dict[int, Tensor]]:   
         print("Creating object masks")
         object_masks: list[dict[int, Tensor]] = []
         object_id = 0
@@ -159,10 +186,16 @@ class ObjectSegmenter:
                     gt_view, _, _ = data[name]
                     mask = torch.zeros_like(gt_view[:,:,0], device=device)
                     masks[image_id] = mask
-                image_segment_path = self.segment_path / name
-                filename = str(segment_id)
-                segment, _ = image_path_to_tensor(image_segment_path / f"{filename}.png", device)
-                segment = segment[:,:,0]
+                if segment_id != -1:
+                    image_segment_path = self.segment_path / name
+                    filename = str(segment_id)
+                    segment, _ = image_path_to_tensor(image_segment_path / f"{filename}.png", device)
+                    segment = segment[:,:,0]
+                else:
+                    segment = torch.zeros_like(gt_view[:,:,0], device=device)
+                    segment_mask = final_masks[image_id] <= 0
+                    segment[segment_mask] = 1
+
                 segment_mask = segment > 0
                 masks[image_id][segment_mask] = 1
 
