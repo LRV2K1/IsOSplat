@@ -18,3 +18,19 @@ __global__ void padd_features(
     const float* __restrict__ kernel,
     float* __restrict__ mask
 );
+
+__global__ void dilation(
+    const int kernel_size,
+    const dim3 mask_size,
+    const float* __restrict__ kernel,
+    const float* __restrict__ mask,
+    float* __restrict__ out_mask
+);
+
+__global__ void erosion(
+    const int kernel_size,
+    const dim3 mask_size,
+    const float* __restrict__ kernel,
+    const float* __restrict__ mask,
+    float* __restrict__ out_mask
+);

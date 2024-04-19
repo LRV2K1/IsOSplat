@@ -71,3 +71,79 @@ __global__ void padd_features(
         }
     }
 }
+
+__global__ void dilation(
+    const int kernel_size,
+    const dim3 mask_size,
+    const bool* __restrict__ kernel,
+    const bool* __restrict__ mask,
+    bool* __restrict__ out_mask
+) {
+    unsigned idx = cg::this_grid().thread_rank();
+    if (idx >= mask_size.x * mask_size.y)
+    {
+        return;
+    }
+
+    int offset = kernel_size / 2;
+
+    int32_t pix_x = idx % mask_size.x;
+    int32_t pix_y = idx / mask_size.y;
+
+    int kernel_inv_x = kernel_size.x - 1;
+    int kernel_inv_y = kernel_size.y - 1;
+
+    bool visible = false;
+    for (int kx = 0; kx < kernel_size; kx++)
+    {
+        for (int ky = 0; ky < kernel_size; ky++)
+        {
+            int x = pix_x + (kx - offset);
+            int y = pix_y + (ky - offset);
+
+            int32_t pix_id = x + y * mask_size.x;
+            int k_id = (kernel_inv_x - kx) + (kernel_inv_y - ky) * kernel_size;
+            //already visible (or) (pixel in image and in kernel)
+            visible = visible || (mask[pix_id] && kernel[k_id]);
+        }
+    }
+    out_mask[idx] = visible;
+}
+
+__global__ void erosion(
+    const int kernel_size,
+    const dim3 mask_size,
+    const float* __restrict__ kernel,
+    const float* __restrict__ mask,
+    float* __restrict__ out_mask
+) {
+    unsigned idx = cg::this_grid().thread_rank();
+    if (idx >= mask_size.x * mask_size.y)
+    {
+        return;
+    }
+
+    int offset = kernel_size / 2;
+
+    int32_t pix_x = idx % mask_size.x;
+    int32_t pix_y = idx / mask_size.y;
+
+    int kernel_inv_x = kernel_size.x - 1;
+    int kernel_inv_y = kernel_size.y - 1;
+
+    bool visible = true;
+    for (int kx = 0; kx < kernel_size; kx++)
+    {
+        for (int ky = 0; ky < kernel_size; ky++)
+        {
+            int x = pix_x + (kx - offset);
+            int y = pix_y + (ky - offset);
+
+            int32_t pix_id = x + y * mask_size.x;
+            int k_id = (kernel_inv_x - kx) + (kernel_inv_y - ky) * kernel_size;
+            //all previous visible (and) (current pixel in image and kernel (or) pixel not in kernel)
+            visible = visible && ((mask[pix_id] && kernel[k_id]) || !kernel[k_id]);
+        }
+    }
+    out_mask[idx] = visible;
+}
