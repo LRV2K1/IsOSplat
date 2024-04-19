@@ -18,4 +18,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("distCUDA2", &distCUDA2);
     m.def("extract_segment_features", &extract_segment_features);
     m.def("padd_features", &padd_features);
+    m.def("closing", &closing);
+    m.def("opening", &opening);
 }

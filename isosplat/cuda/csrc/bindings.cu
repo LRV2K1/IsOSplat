@@ -741,3 +741,75 @@ padd_features(
 
     return mask;
 }
+
+torch::Tensor
+opening(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    ) {
+    int num_points = mask.size(0) * mask.size(1);
+    const dim3 mask_size = {mask.size(1), mask.size(0), 1};
+    const int kernel_size = kernel.size(0);
+
+    torch::Tensor out_mask = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+
+    erosion<<<
+        (num_points + N_THREADS - 1) / N_THREADS,
+        N_THREADS>>>(
+        kernel_size,
+        mask_size,
+        kernel.contiguous().data_ptr<bool>(),
+        mask.contiguous().data_ptr<bool>(),
+        out_mask.contiguous().data_ptr<bool>()
+    );
+
+    torch::Tensor out_mask2 = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+
+    dilation<<<
+        (num_points + N_THREADS - 1) / N_THREADS,
+        N_THREADS>>>(
+        kernel_size,
+        mask_size,
+        kernel.contiguous().data_ptr<bool>(),
+        out_mask.contiguous().data_ptr<bool>(),
+        out_mask2.contiguous().data_ptr<bool>()
+    );
+
+    return out_mask2;
+}
+
+torch::Tensor
+closing(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    ) {
+    int num_points = mask.size(0) * mask.size(1);
+    const dim3 mask_size = {mask.size(1), mask.size(0), 1};
+    const int kernel_size = kernel.size(0);
+
+    torch::Tensor out_mask = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+
+    dilation<<<
+        (num_points + N_THREADS - 1) / N_THREADS,
+        N_THREADS>>>(
+        kernel_size,
+        mask_size,
+        kernel.contiguous().data_ptr<bool>(),
+        mask.contiguous().data_ptr<bool>(),
+        out_mask.contiguous().data_ptr<bool>()
+    );
+
+    torch::Tensor out_mask2 = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+
+    erosion<<<
+        (num_points + N_THREADS - 1) / N_THREADS,
+        N_THREADS>>>(
+        kernel_size,
+        mask_size,
+        kernel.contiguous().data_ptr<bool>(),
+        out_mask.contiguous().data_ptr<bool>(),
+        out_mask2.contiguous().data_ptr<bool>()
+    );
+
+    return out_mask2;
+}

@@ -221,3 +221,15 @@ padd_features(
         const torch::Tensor &mask,
         const torch::Tensor &xys
     );
+
+torch::Tensor
+opening(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    );
+
+torch::Tensor
+closing(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    );
