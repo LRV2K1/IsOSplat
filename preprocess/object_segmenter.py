@@ -272,8 +272,64 @@ class ObjectSegmenter:
                 
         return combined_segments
 
+    @staticmethod
+    def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
+        print("regions")
+
+        neighbour_list = [(0, -1), (-1, -1), (-1, 0), (-1, 1)]  # todo check positions, (0,0) should be top left
+
+        height, width = mask.shape
+        mask_list = mask.cpu()
+        label_list = torch.zeros_like(mask_list, device=mask_list.device)
+        collision_list: list[tuple[int, int]] = []
+
+        # assign initial labels
+        label = 1
+        for y in range(0, height):                          # go over all pixels
+            for x in range(0, width):
+                if mask_list[y][x]:                         # if active pixel
+                    neighbours = []
+                    for ny, nx, in neighbour_list:          # check all neighbours
+                        if y + ny >= 0 and 0 <= x + nx < width:
+                            if mask_list[y+ny][x+nx]:       # if neighbour active
+                                neighbours.append(label_list[y+ny][x+nx])
+                    neighbours = remove_duplicates(neighbours)
+                    if len(neighbours) <= 0:                # new label
+                        label_list[y][x] = label
+                        label += 1
+                    else:
+                        label_list[y][x] = neighbours[0]    # reuse label
+                        if len(neighbours) > 1:
+                            for i in range(1, len(neighbours)):     # record collisions
+                                collision_list.append((neighbours[0], neighbours[i]))
+
+        # resolve collisions
+        label_set: list[set[int]] = [{}]
+        label_dict: dict[int, int] = {}
+        for i in range(1, label):
+            label_set.append({i})
+            label_dict[i] = i-1
+        for ca, cb in collision_list:
+            ra = label_dict[ca]
+            rb = label_dict[cb]
+            if ra != rb:
+                label_set[ra] |= label_set[rb]
+                for p in label_set[rb]:
+                    label_dict[p] = ra
+                label_set[rb] = {}
+
+        # extract masks
+        final_masks: list[Tensor] = []
+        for l_set in label_set:
+            mask_list = torch.zeros_like(mask_list, dtype=torch.bool, device=mask_list.device)
+            for label in l_set:
+                label_mask = label_list == label
+                mask_list[label_mask] = True
+            final_masks.append(mask_list.to(dtype=torch.bool, device=device))
+        return final_masks
 
 
+# deprecated
     def segment_objects(self, data: Data, point_cloud_id: dict[int, int], point_cloud: BasicPointCloud, sfm_images: dict[int, Image], device: torch.device):
         # xzys, _, errors = point_cloud
 
