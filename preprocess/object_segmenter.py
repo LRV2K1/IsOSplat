@@ -18,6 +18,18 @@ class ObjectSegmenter:
         self.segment_path = segment_path
 
     def segment_objects_new(self, data: Data, point_cloud_id: dict[int, int], point_cloud: BasicPointCloud, sfm_images: dict[int, Image], device: torch.device):
+        closing_kernel = torch.tensor(
+            [
+                [0, 1, 1, 1, 0],
+                [1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1],
+                [0, 1, 1, 1, 0]
+            ],
+            dtype=torch.bool,
+            device=device
+        )
+
         # image_id -> {segment_id -> [feature_id]}
         segments_map: dict[int, dict[int, list[int]]] = {}
         # feature_id -> [(image_id, segment_id)]
@@ -41,7 +53,7 @@ class ObjectSegmenter:
             image_segment_path = self.segment_path / name
 
             gt_view, _, _ = data[name]
-            total_mask = torch.zeros_like(gt_view[:,:,0], device=device)
+            total_mask = torch.zeros_like(gt_view[:,:,0], dtype=torch.bool, device=device)
 
             for file in os.listdir(image_segment_path):     # for every segment in the image
                 filename = os.fsdecode(file)
@@ -51,7 +63,7 @@ class ObjectSegmenter:
                 segment, _ = image_path_to_tensor(image_segment_path / filename, device)
                 segment_mask = segment[:,:,0] > 0
                 xy_mask = _C.extract_segment_features(segment_mask, xys)
-                total_mask[segment_mask] = 1
+                total_mask[segment_mask] = True
 
                 feature_list = []
                 segment_ipids = ipids[xy_mask.cpu()]
@@ -67,24 +79,27 @@ class ObjectSegmenter:
                 else:
                     n_discarded += 1
             
-            # empty mask
-            segment_mask = total_mask <= 0
-            xy_mask = _C.extract_segment_features(segment_mask, xys)
-            feature_list = []
-            segment_ipids = ipids[xy_mask.cpu()]
-            for pid in segment_ipids:
-                feature_list.append(pid)
-                if pid not in features_map:
-                    features_map[pid] = []
-                # features_map[pid].append((image_id, -1))
-            if len(feature_list) > 0:
-                # segment_dict[-1] = feature_list
-                n_segments += 1
-            else:
-                n_discarded += 1
-            filePath = f"segments/total"
-            save_img_from_tensor(total_mask, filePath, f"{image_id}")
-            final_masks[(image_id, -1)] = segment_mask
+            # empty masks
+            total_mask = _C.closing(closing_kernel, total_mask)
+            total_masks = self.region_mapping(total_mask, device)
+            segment_id = -1
+            for segment_mask in total_masks:
+                xy_mask = _C.extract_segment_features(segment_mask, xys)
+
+                feature_list = []
+                segment_ipids = ipids[xy_mask.cpu()]
+                final_masks[(image_id, segment_id)] = segment_mask
+                for pid in segment_ipids:
+                    feature_list.append(pid)
+                    if pid not in features_map:
+                        features_map[pid] = []
+                    features_map[pid].append((image_id, segment_id))
+                if len(feature_list) > 0:
+                    segment_dict[segment_id] = feature_list
+                    n_segments += 1
+                else:
+                    n_discarded += 1
+                segment_id -= 1
 
             segments_map[image_id] = segment_dict
             print(f"{n_segments} segments extracted")
