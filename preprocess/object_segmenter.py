@@ -18,6 +18,19 @@ class ObjectSegmenter:
         self.segment_path = segment_path
 
     def segment_objects_new(self, data: Data, point_cloud_id: dict[int, int], point_cloud: BasicPointCloud, sfm_images: dict[int, Image], device: torch.device):
+        # closing_kernel = torch.tensor(
+        #     [
+        #         [0, 0, 1, 1, 1, 0, 0],
+        #         [0, 1, 1, 1, 1, 1, 0],
+        #         [1, 1, 1, 1, 1, 1, 1],
+        #         [1, 1, 1, 1, 1, 1, 1],
+        #         [1, 1, 1, 1, 1, 1, 1],
+        #         [0, 1, 1, 1, 1, 1, 0],
+        #         [0, 0, 1, 1, 1, 0, 0]
+        #     ],
+        #     dtype=torch.bool,
+        #     device=device
+        # )
         closing_kernel = torch.tensor(
             [
                 [0, 1, 1, 1, 0],
@@ -80,11 +93,13 @@ class ObjectSegmenter:
                     n_discarded += 1
             
             # empty masks
-            total_mask = _C.closing(closing_kernel, total_mask)
-            total_masks = self.region_mapping(total_mask, device)
+            new_total_mask = _C.closing(closing_kernel, total_mask)
+            torch.cuda.synchronize()
+            total_masks = self.region_mapping(new_total_mask, device)
             segment_id = -1
             for segment_mask in total_masks:
                 xy_mask = _C.extract_segment_features(segment_mask, xys)
+                total_mask[segment_mask] = True
 
                 feature_list = []
                 segment_ipids = ipids[xy_mask.cpu()]
@@ -105,6 +120,9 @@ class ObjectSegmenter:
             print(f"{n_segments} segments extracted")
             print(f"{n_discarded} segments discarded")
 
+            filePath = f"segments/total5"
+            save_img_from_tensor(total_mask, filePath, f"{image_id}")
+
         # [([(image_id, segment_id)], [feature_id])]
         # objects = self.combine_segments(segments_map, features_map, 5)
         objects = self.combine_segments_percentage(segments_map, features_map, 0.25)
@@ -115,7 +133,7 @@ class ObjectSegmenter:
         id = 0
         for masks in object_masks:
             for image_id in masks:
-                filePath = f"segments/new_segments6"
+                filePath = f"segments/new_segments7"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
@@ -289,37 +307,39 @@ class ObjectSegmenter:
 
     @staticmethod
     def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
-        print("regions")
+        print("Extracting missing regions")
 
         neighbour_list = [(0, -1), (-1, -1), (-1, 0), (-1, 1)]  # todo check positions, (0,0) should be top left
 
         height, width = mask.shape
         mask_list = mask.cpu()
-        label_list = torch.zeros_like(mask_list, device=mask_list.device)
+        label_list = torch.zeros(height, width, dtype=torch.int32, device=mask_list.device)
         collision_list: list[tuple[int, int]] = []
 
         # assign initial labels
         label = 1
         for y in range(0, height):                          # go over all pixels
             for x in range(0, width):
-                if mask_list[y][x]:                         # if active pixel
+                if not mask_list[y][x]:                     # if active pixel
                     neighbours = []
                     for ny, nx, in neighbour_list:          # check all neighbours
                         if y + ny >= 0 and 0 <= x + nx < width:
-                            if mask_list[y+ny][x+nx]:       # if neighbour active
-                                neighbours.append(label_list[y+ny][x+nx])
+                            if not mask_list[y+ny, x+nx]:   # if neighbour active
+                                neighbours.append(label_list[y+ny, x+nx].item())
                     neighbours = remove_duplicates(neighbours)
                     if len(neighbours) <= 0:                # new label
-                        label_list[y][x] = label
+                        label_list[y, x] = label
                         label += 1
                     else:
-                        label_list[y][x] = neighbours[0]    # reuse label
+                        label_list[y, x] = neighbours[0]    # reuse label
                         if len(neighbours) > 1:
                             for i in range(1, len(neighbours)):     # record collisions
                                 collision_list.append((neighbours[0], neighbours[i]))
 
+        collision_list = remove_duplicates(collision_list)
+
         # resolve collisions
-        label_set: list[set[int]] = [{}]
+        label_set: list[set[int]] = []
         label_dict: dict[int, int] = {}
         for i in range(1, label):
             label_set.append({i})
@@ -331,16 +351,19 @@ class ObjectSegmenter:
                 label_set[ra] |= label_set[rb]
                 for p in label_set[rb]:
                     label_dict[p] = ra
-                label_set[rb] = {}
+                label_set[rb] = set()
 
         # extract masks
         final_masks: list[Tensor] = []
         for l_set in label_set:
+            if len(l_set) <= 0:
+                continue
             mask_list = torch.zeros_like(mask_list, dtype=torch.bool, device=mask_list.device)
             for label in l_set:
                 label_mask = label_list == label
                 mask_list[label_mask] = True
             final_masks.append(mask_list.to(dtype=torch.bool, device=device))
+        print(f"{len(final_masks)} missing regions extracted")
         return final_masks
 
 

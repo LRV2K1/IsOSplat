@@ -751,7 +751,7 @@ opening(
     const dim3 mask_size = {mask.size(1), mask.size(0), 1};
     const int kernel_size = kernel.size(0);
 
-    torch::Tensor out_mask = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+    torch::Tensor out_mask = torch::zeros({mask.size(0), mask.size(1)}, mask.options());
 
     erosion<<<
         (num_points + N_THREADS - 1) / N_THREADS,
@@ -763,7 +763,7 @@ opening(
         out_mask.contiguous().data_ptr<bool>()
     );
 
-    torch::Tensor out_mask2 = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+    torch::Tensor out_mask2 = torch::zeros({mask.size(0), mask.size(1)}, mask.options());
 
     dilation<<<
         (num_points + N_THREADS - 1) / N_THREADS,
@@ -787,7 +787,7 @@ closing(
     const dim3 mask_size = {mask.size(1), mask.size(0), 1};
     const int kernel_size = kernel.size(0);
 
-    torch::Tensor out_mask = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+    torch::Tensor out_mask = torch::zeros({mask.size(0), mask.size(1)}, mask.options());
 
     dilation<<<
         (num_points + N_THREADS - 1) / N_THREADS,
@@ -799,7 +799,7 @@ closing(
         out_mask.contiguous().data_ptr<bool>()
     );
 
-    torch::Tensor out_mask2 = torch::zeros({mask.size(0), mask_size(1)}, mask.options());
+    torch::Tensor out_mask2 = torch::zeros({mask.size(0), mask.size(1)}, mask.options());
 
     erosion<<<
         (num_points + N_THREADS - 1) / N_THREADS,
