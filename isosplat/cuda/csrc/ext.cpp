@@ -20,4 +20,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("padd_features", &padd_features);
     m.def("opening", &opening);
     m.def("closing", &closing);
+    m.def("dilation", &dilation);
+    m.def("erosion", &erosion);
 }

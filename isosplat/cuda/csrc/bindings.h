@@ -233,3 +233,15 @@ closing(
         const torch::Tensor &kernel,
         const torch::Tensor &mask
     );
+
+torch::Tensor
+dilation(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    );
+
+torch::Tensor
+erosion(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    );
