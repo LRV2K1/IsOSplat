@@ -100,7 +100,9 @@ __global__ void dilation(
         {
             int x = pix_x + (kx - offset);
             int y = pix_y + (ky - offset);
-
+            if (x < 0 || x >= mask_size.x || y < 0 || y >= mask_size.y)
+                continue;
+                
             int32_t pix_id = x + y * mask_size.x;
             int k_id = (kernel_inv_x - kx) + (kernel_inv_y - ky) * kernel_size;
             //already visible (or) (pixel in image and in kernel)
@@ -140,6 +142,9 @@ __global__ void erosion(
             int y = pix_y + (ky - offset);
 
             int32_t pix_id = x + y * mask_size.x;
+            if (x < 0 || x >= mask_size.x || y < 0 || y >= mask_size.y)
+                continue;
+                
             int k_id = (kernel_inv_x - kx) + (kernel_inv_y - ky) * kernel_size;
             //all previous visible (and) (current pixel in image and kernel (or) pixel not in kernel)
             visible = visible && ((mask[pix_id] && kernel[k_id]) || !kernel[k_id]);
