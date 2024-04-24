@@ -97,6 +97,7 @@ class ObjectSegmenter:
                         features_map[pid] = []
                     features_map[pid].append((image_id, segment_id))
                 if len(feature_list) > 0:
+                    # total_mask[segment_mask] = True
                     segment_dict[segment_id] = feature_list
                     n_segments += 1
                     image_final_mask[segment_id] = segment_mask
@@ -121,6 +122,7 @@ class ObjectSegmenter:
                         features_map[pid] = []
                     features_map[pid].append((image_id, segment_id))
                 if len(feature_list) > 0:
+                    # total_mask[segment_mask] = True
                     segment_dict[segment_id] = feature_list
                     n_segments += 1
                     image_final_mask[segment_id] = segment_mask
@@ -134,14 +136,14 @@ class ObjectSegmenter:
             segments_map[image_id] = segment_dict
             print(f"{n_segments} segments extracted")
             print(f"{n_combined} segments combined")
-            print(f"{n_discarded- n_combined} segments discarded")
+            print(f"{n_discarded} segments discarded")
 
-            filePath = f"segments/total5"
+            filePath = f"segments/total6"
             save_img_from_tensor(total_mask, filePath, f"{image_id}")
-
+ 
         # [([(image_id, segment_id)], [feature_id])]
         # objects = self.combine_segments(segments_map, features_map, 5)
-        objects = self.combine_segments_percentage(segments_map, features_map, 0.40)
+        objects = self.combine_segments_percentage(segments_map, features_map, 0.80)
 
         n_dis_objects = 0
         for masks, points in objects:
@@ -156,7 +158,7 @@ class ObjectSegmenter:
         id = 0
         for masks, points in object_masks:
             for image_id in masks:
-                filePath = f"segments/new_segments7"
+                filePath = f"segments/new_segments8"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
