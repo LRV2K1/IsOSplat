@@ -138,12 +138,12 @@ class ObjectSegmenter:
             print(f"{n_combined} segments combined")
             print(f"{n_discarded} segments discarded")
 
-            filePath = f"segments/total6"
+            filePath = f"segments/fern4/total"
             save_img_from_tensor(total_mask, filePath, f"{image_id}")
  
         # [([(image_id, segment_id)], [feature_id])]
         # objects = self.combine_segments(segments_map, features_map, 5)
-        objects = self.combine_segments_percentage(segments_map, features_map, 0.80)
+        objects = self.combine_segments_percentage(segments_map, features_map, 0.50)
 
         n_dis_objects = 0
         for masks, points in objects:
@@ -158,7 +158,7 @@ class ObjectSegmenter:
         id = 0
         for masks, points in object_masks:
             for image_id in masks:
-                filePath = f"segments/new_segments8"
+                filePath = f"segments/fern4/segments"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
@@ -333,6 +333,49 @@ class ObjectSegmenter:
                     combined_segments.append((c_segments[(image_key, segment_key)], segments_map[image_key][segment_key]))
                 
         return combined_segments
+
+    @staticmethod
+    def combine_segments_overlap_percentage(
+        image_id: int,
+        segments: dict[int, list[int]], 
+        features_map: dict[int, list[tuple[int, int]]], 
+        masks: dict[int, Tensor], 
+        threshold: float
+    ) -> tuple[dict[int, list[int]], dict[int, list[tuple[int, int]]], dict[int, Tensor]]:      # updated segments, features_map, masks
+        print("Merging overlapping segments")
+
+        merged_segments = {}
+        for seg_id_1 in segments:
+            for seg_id_2 in segments:
+                if seg_id_1 == seg_id_2 or seg_id_1 in merged_segments or seg_id_2 in merged_segments:
+                    continue
+                seg_m_1 = masks[seg_id_1]
+                seg_m_2 = masks[seg_id_2]
+                size_1 = torch.count_nonzero(seg_m_1).item()
+                size_2 = torch.count_nonzero(seg_m_2).item()
+                size_o = float(torch.count_nonzero(torch.logical_and(seg_m_1, seg_m_2)).item())
+                if size_o/size_1 >= threshold or size_o/size_2 >= threshold:     
+                    merged_segments.add(seg_id_2)
+                    
+                    seg_f_1 = segments[seg_id_1]
+                    seg_f_2 = segments[seg_id_2]
+                    segments[seg_id_1] = remove_duplicates(seg_f_1 + seg_f_2)
+                    segments[seg_id_2] = []
+
+                    masks[seg_id_1] = torch.logical_or(seg_m_1, seg_m_2)
+                    masks.pop(seg_id_2)
+
+                    for feature in seg_f_2:
+                        feature_map = features_map[feature]
+                        feature_map.append((image_id, seg_id_1))
+                        feature_map.remove((image_id, seg_id_2))
+                        features_map[feature] = remove_duplicates(feature_map)
+
+        for seg_id in merged_segments:
+            segments.pop(seg_id)
+
+        return segments, features_map, masks
+
 
     @staticmethod
     def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
