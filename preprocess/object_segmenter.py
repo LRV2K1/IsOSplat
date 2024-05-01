@@ -69,14 +69,11 @@ class ObjectSegmenter:
             ipids = ipids[ipids_mask]
             xys = torch.tensor(np.int32(sfm_image.xys)[ipids_mask.tolist()], device=device)
             
-            n_segments = 0
-            n_discarded = 0
-            segment_dict = {}
-            discarded_masks = []
             image_segment_path = self.segment_path / name
 
             gt_view, _, _ = data[name]
             total_mask = torch.zeros_like(gt_view[:,:,0], dtype=torch.bool, device=device)
+            
             image_final_mask = {}
 
             for file in os.listdir(image_segment_path):     # for every segment in the image
@@ -86,59 +83,33 @@ class ObjectSegmenter:
                 segment_id = int(filename.split('.')[0])
                 segment, _ = image_path_to_tensor(image_segment_path / filename, device)
                 segment_mask = segment[:,:,0] > 0
-                xy_mask = _C.extract_segment_features(segment_mask, xys)
+                
                 total_mask[segment_mask] = True
-
-                feature_list = []
-                segment_ipids = ipids[xy_mask.cpu()]
-                for pid in segment_ipids:
-                    feature_list.append(pid)
-                    if pid not in features_map:
-                        features_map[pid] = []
-                    features_map[pid].append((image_id, segment_id))
-                if len(feature_list) > 0:
-                    # total_mask[segment_mask] = True
-                    segment_dict[segment_id] = feature_list
-                    n_segments += 1
-                    image_final_mask[segment_id] = segment_mask
-                else:
-                    n_discarded += 1
-                    discarded_masks.append(segment_mask)
-            
+                image_final_mask[segment_id] = segment_mask
+                
             # empty masks
             new_total_mask = _C.closing(self.closing_kernel, total_mask)
             torch.cuda.synchronize()
-            total_masks = self.region_mapping(new_total_mask, device)
+            region_masks = self.region_mapping(new_total_mask, device)
             segment_id = -1
-            for segment_mask in total_masks:
-                xy_mask = _C.extract_segment_features(segment_mask, xys)
+            for segment_mask in region_masks:
                 total_mask[segment_mask] = True
-
-                feature_list = []
-                segment_ipids = ipids[xy_mask.cpu()]
-                for pid in segment_ipids:
-                    feature_list.append(pid)
-                    if pid not in features_map:
-                        features_map[pid] = []
-                    features_map[pid].append((image_id, segment_id))
-                if len(feature_list) > 0:
-                    # total_mask[segment_mask] = True
-                    segment_dict[segment_id] = feature_list
-                    n_segments += 1
-                    image_final_mask[segment_id] = segment_mask
-                else:
-                    n_discarded += 1
-                    discarded_masks.append(segment_mask)
+                image_final_mask[segment_id] = segment_mask
                 segment_id -= 1
 
-            image_final_mask, n_combined = self.add_descarded_segments(image_final_mask, discarded_masks)
+            segment_dict, discarded_segments, n_segments = self.configure_segment(xys, image_final_mask, image_id, ipids, features_map)
+            n_discarded = len(discarded_segments)
+            segment_dict, features_map, image_final_mask, n_merged = self.combine_segments_overlap_percentage(image_id, segment_dict, features_map, image_final_mask, 0.5)
+            image_final_mask, n_combined = self.add_descarded_segments(image_final_mask, discarded_segments)
+            
             final_masks[image_id] = image_final_mask
             segments_map[image_id] = segment_dict
             print(f"{n_segments} segments extracted")
+            print(f"{n_merged} segments merged")
             print(f"{n_combined} segments combined")
             print(f"{n_discarded} segments discarded")
 
-            filePath = f"segments/fern4/total"
+            filePath = f"segments/fountain4/total"
             save_img_from_tensor(total_mask, filePath, f"{image_id}")
  
         # [([(image_id, segment_id)], [feature_id])]
@@ -158,10 +129,38 @@ class ObjectSegmenter:
         id = 0
         for masks, points in object_masks:
             for image_id in masks:
-                filePath = f"segments/fern4/segments"
+                filePath = f"segments/fountain4/segments"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
+    @staticmethod
+    def configure_segment(
+        xys: Tensor, 
+        masks: dict[int, Tensor], 
+        image_id: int, 
+        ipids: np.ndarray, 
+        features_map: dict[int, list[tuple[int, int]]]
+    ) -> tuple[dict[int, list[int]], list[int], int]:
+        n_segments = 0
+        segment_dict = {}
+        discarded_segments = []
+        
+        for segment_id in masks:
+            mask = masks[segment_id]
+            xy_mask = _C.extract_segment_features(mask, xys)
+            segment_ipids = ipids[xy_mask.cpu()]
+            feature_list = []
+            for pid in segment_ipids:
+                feature_list.append(pid)
+                if pid not in features_map:
+                    features_map[pid] = []
+                features_map[pid].append((image_id, segment_id))
+            if len(feature_list) > 0:
+                n_segments += 1
+                segment_dict[segment_id] = remove_duplicates(feature_list)
+            else:
+                discarded_segments.append(segment_id)
+        return segment_dict, discarded_segments, n_segments
 
     @staticmethod                                                                                                                                       # [([(image_id, segment_id)], [feature_id])]
     def combine_segments(segments_map: dict[int, dict[int, list[int]]], features_map: dict[int, list[tuple[int, int]]], number_feature_threshold: int) -> list[tuple[list[tuple[int, int]], list[int]]]:
@@ -224,7 +223,6 @@ class ObjectSegmenter:
                     combined_segments.append((c_segments[(image_key, segment_key)], segments_map[image_key][segment_key]))
                 
         return combined_segments
-
 
     def create_object_masks(self, objects: list[tuple[list[tuple[int, int]], list[int]]], data: Data, sfm_images: dict[int, Image], final_masks: dict[int, dict[int, Tensor]], device: torch.device, point_padd: Optional[int] = None) -> list[tuple[dict[int, Tensor]], list[int]]:   
         print("Creating object masks")
@@ -307,7 +305,14 @@ class ObjectSegmenter:
             added = False
             for segment in other_segments:                              # go over all other segments
                 o_image_key, o_segment_key = segment
+                # if o_segment_key in segments_map[o_image_key]:
+                if len(segments_map[o_image_key][o_segment_key]) == 0:
+                    done_segments[segment] = True 
+                    continue
                 other_percentage = float(other_segments[segment]) / len(segments_map[o_image_key][o_segment_key])
+                # else:
+                #     print(o_image_key, o_segment_key)
+                #     len(segments_map[o_image_key][o_segment_key])
                 percentage = float(other_segments[segment]) / len(segments_map[image_key][segment_key])
                 if other_percentage >= feature_threshold or percentage >= feature_threshold: # check feature threshold
                     done_segments[segment] = True
@@ -328,7 +333,7 @@ class ObjectSegmenter:
                 segment_queue.append((image_key, segment_key))          # segment added to queue
             else:
                 done_segments[(image_key, segment_key)] = True          # segment done
-                print(f"done: {len(segments_map[image_key][segment_key])}")
+                # print(f"done: {len(segments_map[image_key][segment_key])}")
                 if len(segments_map[image_key][segment_key]) > 0:
                     combined_segments.append((c_segments[(image_key, segment_key)], segments_map[image_key][segment_key]))
                 
@@ -344,7 +349,7 @@ class ObjectSegmenter:
     ) -> tuple[dict[int, list[int]], dict[int, list[tuple[int, int]]], dict[int, Tensor]]:      # updated segments, features_map, masks
         print("Merging overlapping segments")
 
-        merged_segments = {}
+        merged_segments = set()
         for seg_id_1 in segments:
             for seg_id_2 in segments:
                 if seg_id_1 == seg_id_2 or seg_id_1 in merged_segments or seg_id_2 in merged_segments:
@@ -372,9 +377,10 @@ class ObjectSegmenter:
                         features_map[feature] = remove_duplicates(feature_map)
 
         for seg_id in merged_segments:
-            segments.pop(seg_id)
+            segments[seg_id] = []
+            # segments.pop(seg_id)
 
-        return segments, features_map, masks
+        return segments, features_map, masks, len(merged_segments)
 
 
     @staticmethod
@@ -438,12 +444,12 @@ class ObjectSegmenter:
         print(f"{len(final_masks)} missing regions extracted")
         return final_masks
 
-    def add_descarded_segments(self, final_masks: dict[int, Tensor], discarded_masks: list[Tensor]) -> tuple[dict[int, Tensor], int]:
+    def add_descarded_segments(self, final_masks: dict[int, Tensor], discarded_segments: list[int]) -> tuple[dict[int, Tensor], int]:
         overlaps: list[tuple[int, Tensor]] = []
 
-        for dsegment in discarded_masks:
+        for dsegment_id in discarded_segments:
             max_overlap: Optional[tuple[int, int]] = None
-            dsegment = _C.dilation(self.growing_kernel, dsegment)
+            dsegment = _C.dilation(self.growing_kernel, final_masks[dsegment_id])
             for segment_id in final_masks:
                 segment = final_masks[segment_id]
                 overlap = torch.logical_and(dsegment, segment)
