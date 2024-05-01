@@ -168,6 +168,8 @@ class GaussianSplatting:
 
         use_data = self.rescale_data(data, image_scale)
 
+        data_queue = []
+
         for itr in range(1, iterations+1):
             average_image_loss = 0
             average_loss = 0
@@ -190,6 +192,11 @@ class GaussianSplatting:
 
             random.shuffle(data_list)
             for name in data_list:
+            # if len(data_queue) == 0:
+            #     data_queue = data_list.copy()
+            #     random.shuffle(data_queue)
+            # name = data_queue.pop()
+            
                 gt_view, camera, add_data = use_data[name]
 
                 bg_depth = 20.0
@@ -212,6 +219,7 @@ class GaussianSplatting:
                 self.times[2] += t2
 
                 print(f"Iteration {itr}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
+                # print(f"Iteration {itr}/{iterations}, Loss: {loss.item()}")
                 data_itr += 1
 
                 with torch.no_grad():
