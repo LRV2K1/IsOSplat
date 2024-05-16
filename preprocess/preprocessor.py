@@ -190,7 +190,7 @@ class PreProcessor:
             # object_segmenter = ObjectSegmenter(self.segment_path)
             # object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
             # object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
-            segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1, 1.025)
+            segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1, 1.005)
 
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None

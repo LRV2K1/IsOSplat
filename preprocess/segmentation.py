@@ -98,10 +98,9 @@ def segment_object(
 
         descarded_segments_th: float = 0.1,
         local_feature_th: float = 0.1,
-        feature_th: float = 0.1):
+        feature_th: float = 0.1,
+        file_path: Optional[Path] = None):
     print("Segmenting objects")
-    filePath = f"segments/fern_2_10"
-    # filePath = f"segments/fountain_2_1"
 
     features_map: dict[int, list[tuple[int, int]]] = {}
     segments_map: dict[int, dict[int, list[int]]] = {}
@@ -190,7 +189,7 @@ def segment_object(
         segments_mask_map[image_id] = segments
 
         # generate_segmentation_images(f"{filePath}/image", f"{image_id}", camera.width, camera.height, segments, device, xys=xys)
-        generate_segmentation_images(f"{filePath}/image", f"{name}_{image_id}", camera.width, camera.height, segments, device)
+        # generate_segmentation_images(f"{filePath}/image", f"{name}_{image_id}", camera.width, camera.height, segments, device)
 
     print()
 
@@ -222,9 +221,12 @@ def segment_object(
                     obj_segments_dict[img][obj_i] = segments_mask_map[img][seg]
                 obj_segments_dict[img][obj_i] = torch.logical_or(obj_segments_dict[img][obj_i], segments_mask_map[img][seg])
             obj_i += 1
-        img_path = f"{filePath}/object_{i+1}"
+        img_path = file_path / f"object_{i+1}"
         for img in obj_segments_dict:
             generate_segmentation_images(img_path, f"{img}", camera.width, camera.height, obj_segments_dict[img], device, True)
+
+        return len(objects_map_1), len(objects_map_2), len(objects_map_3)
+    
 
 def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
     neighbour_list = [(0, -1), (-1, -1), (-1, 0), (-1, 1)]  # todo check positions, (0,0) should be top left
