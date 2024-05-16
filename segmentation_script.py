@@ -27,7 +27,7 @@ def main():
 
         with open(record_path / "records.csv", "a", newline='') as record_file:
             writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            writer.writerow(["data_1", "data_2", "data_2", "", ""])
+            writer.writerow(["data_1", "data_2", "data_3", "", ""])
             writer.writerow(["n_objects_1", "n_objects_2", "n_objects_3", "threshold", "iteration"])
 
         sfm_images = read_extrinsics_binary(sfm_path / "images.bin")
