@@ -18,6 +18,7 @@ from .camera_constructor import create_camera_from_cam_file, create_camera_from_
 from .marigold_loader import load_depth_map
 from arguments import GroupParams, InitModel, CamModel, DepthModel
 from .object_segmenter import ObjectSegmenter
+from .segmentation import segment_object
 
 
 class PreProcessor:
@@ -31,7 +32,7 @@ class PreProcessor:
         
         if data_path:
             self.img_path = data_path / "images"
-            self.sfm_path = data_path / "sfm" / "0"
+            self.sfm_path = data_path / "sparse" / "0"
             self.depth_path = data_path / "depth_npy"
             self.cams_path = data_path / "cams"
             self.depth_file_path = self.depth_path / "st.json"
@@ -101,7 +102,7 @@ class PreProcessor:
                 for sfm_image in sfm_images.values():
                     name = sfm_image.name.split('.')[0]
                     add_data = {}
-                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.png", device)
+                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.jpg", device)
                     if not preprocess_params.no_alpha:
                         add_data["alpha"] = gt_alpha
 
@@ -186,9 +187,10 @@ class PreProcessor:
             logger.log_hparams(depth_parameters)
 
         if sfm_images is not None:
-            object_segmenter = ObjectSegmenter(self.segment_path)
+            # object_segmenter = ObjectSegmenter(self.segment_path)
             # object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
-            object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
+            # object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
+            segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1, 1.025)
 
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None

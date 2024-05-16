@@ -99,7 +99,7 @@ class ObjectSegmenter:
 
             segment_dict, discarded_segments, n_segments = self.configure_segment(xys, image_final_mask, image_id, ipids, features_map)
             n_discarded = len(discarded_segments)
-            segment_dict, features_map, image_final_mask, n_merged = self.combine_segments_overlap_percentage(image_id, segment_dict, features_map, image_final_mask, 0.5)
+            segment_dict, features_map, image_final_mask, n_merged = self.combine_segments_overlap_percentage(image_id, segment_dict, features_map, image_final_mask, 0.1)
             image_final_mask, n_combined = self.add_descarded_segments(image_final_mask, discarded_segments)
             
             final_masks[image_id] = image_final_mask
@@ -109,12 +109,12 @@ class ObjectSegmenter:
             print(f"{n_combined} segments combined")
             print(f"{n_discarded} segments discarded")
 
-            filePath = f"segments/fountain4/total"
+            filePath = f"segments/fern11/total"
             save_img_from_tensor(total_mask, filePath, f"{image_id}")
  
         # [([(image_id, segment_id)], [feature_id])]
         # objects = self.combine_segments(segments_map, features_map, 5)
-        objects = self.combine_segments_percentage(segments_map, features_map, 0.50)
+        objects = self.combine_segments_percentage(segments_map, features_map, 0.1)
 
         n_dis_objects = 0
         for masks, points in objects:
@@ -129,7 +129,7 @@ class ObjectSegmenter:
         id = 0
         for masks, points in object_masks:
             for image_id in masks:
-                filePath = f"segments/fountain4/segments"
+                filePath = f"segments/fern11/segments"
                 save_img_from_tensor(masks[image_id], filePath, f"{id}-{image_id}")
             id += 1
         
