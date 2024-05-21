@@ -97,9 +97,7 @@ def segment_object(
         device: torch.device,
 
         descarded_segments_th: float = 0.1,
-        local_feature_th: float = 0.1,
-        feature_th: float = 0.1,
-        file_path: Optional[Path] = None):
+        local_feature_th: float = 0.1) -> tuple[dict[int, dict[int, list[int]]], dict[int, list[tuple[int, int]]], dict[int, dict[int, Tensor]]]:
     print("Segmenting objects")
 
     features_map: dict[int, list[tuple[int, int]]] = {}
@@ -152,18 +150,11 @@ def segment_object(
 #       for every missing segment
         segment_id = 0
         for missing_segment in missing_segments:
-
-#           segments <- segments + missing segment
             segment_id -= 1
             segments[segment_id] = missing_segment
 
         total_seg = len(segments)
         print(f"{total_seg}: combined segments ({missing_seg} + {initial_seg})")
-
-#       for every segment
-#           features <- extract feature list segment
-#           if len(features) <= 0
-#               store segment for later
 
         segment_dict, discarded_segments, local_features, n_segments = configure_segment(xys, segments, image_id, ipids, features_map)
 
@@ -171,8 +162,6 @@ def segment_object(
         discarded_seg = len(discarded_segments)
         print(f"{created_seg}/{total_seg}: segments with features found and created")
         print(f"{discarded_seg}/{total_seg}: segments discarded")
-
-        # generate_segmentation_images(f"{filePath}/discarded", f"{image_id}", camera.width, camera.height, discarded_segments, device)
 
 #       some way of adding segments without features
         added_seg = add_descarded_segments(segments, discarded_segments, descarded_segments_th, device)
@@ -188,15 +177,24 @@ def segment_object(
         segments_map[image_id] = segment_dict
         segments_mask_map[image_id] = segments
 
-        # generate_segmentation_images(f"{filePath}/image", f"{image_id}", camera.width, camera.height, segments, device, xys=xys)
-        # generate_segmentation_images(f"{filePath}/image", f"{name}_{image_id}", camera.width, camera.height, segments, device)
-
     print()
 
-#   combine segments from different images
-    objects_map_1, objects_feature_map_1 = create_objects(segments_map, features_map, feature_th)
+    return segments_map, features_map, segments_mask_map
+    
+    
+def create_objects(
+    segments_map: dict[int, dict[int, list[int]]], 
+    features_map: dict[int, list[tuple[int, int]]], 
+    segments_mask_map: dict[int, dict[int, Tensor]], 
+    sfm_images: dict[int, Image], 
+    sfm_cameras: dict[int, Camera],
+    device: torch.device, 
+    feature_th: float = 0.1,
+    file_path: Optional[Path] = None):
+    objects_map_1, objects_feature_map_1 = create_objects_1(segments_map, features_map, feature_th)
     objects_map_2, objects_feature_map_2 = create_objects_2(segments_map, features_map, feature_th)
     objects_map_3, objects_feature_map_3 = create_objects_3(segments_map, features_map, feature_th)
+    
     print(f"{len(objects_map_1)}: objects_1 created")
     print(f"{len(objects_map_2)}: objects_2 created")
     print(f"{len(objects_map_3)}: objects_3 created")
@@ -221,12 +219,13 @@ def segment_object(
                     obj_segments_dict[img][obj_i] = segments_mask_map[img][seg]
                 obj_segments_dict[img][obj_i] = torch.logical_or(obj_segments_dict[img][obj_i], segments_mask_map[img][seg])
             obj_i += 1
-        img_path = file_path / f"object_{i+1}"
-        for img in obj_segments_dict:
-            generate_segmentation_images(img_path, f"{img}", camera.width, camera.height, obj_segments_dict[img], device, True)
+        if file_path is not None:
+            img_path = file_path / f"object_{i+1}"
+            for img in obj_segments_dict:
+                camera = sfm_cameras[sfm_images[img].camera_id]
+                generate_segmentation_images(img_path, f"{img}", camera.width, camera.height, obj_segments_dict[img], device, True)
 
         return len(objects_map_1), len(objects_map_2), len(objects_map_3)
-    
 
 def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
     neighbour_list = [(0, -1), (-1, -1), (-1, 0), (-1, 1)]  # todo check positions, (0,0) should be top left
@@ -433,7 +432,7 @@ def combine_segments(img_id: int, seg_id_1: int, seg_id_2: int, segment_dict: di
             features_map[feature].append((img_id, seg_id_1))
 
 
-def create_objects(
+def create_objects_1(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
         feature_th: float
