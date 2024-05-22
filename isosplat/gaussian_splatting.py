@@ -305,15 +305,20 @@ class GaussianSplatting:
             return out_img, out_depth, t0, t1
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
-        loss = (1.0 - self.optimzable_params.l_ssim) * l1_loss(nv_view, gt_view) \
-            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view, gt_view))
+        mask = torch.ones(gt_view.shape[0], gt_view.shape[1], dtype=torch.bool, device=gt_view.device)
+        if "mask" in add_data:
+            mask = add_data["mask"]
+        image_mask = mask[:,:,None].repeat(1,1,3)
+        
+        loss = (1.0 - self.optimzable_params.l_ssim) * l1_loss(nv_view, gt_view * image_mask) \
+            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view, gt_view * image_mask))
         img_loss = loss.item()
         if "depth" in add_data and nv_depth is not None:
-            loss += self.optimzable_params.l_depth * l1_loss(nv_depth, add_data["depth"])
+            loss += self.optimzable_params.l_depth * l1_loss(nv_depth[mask], add_data["depth"][mask])
         if "edges" in add_data and nv_depth is not None:
             depth_mask = (nv_depth>0).detach()
-            nearDepthMean_map = nearMean_map(nv_depth, add_data["edges"]*depth_mask, kernelsize=3)
-            loss += self.optimzable_params.l_smooth * l2_loss(nearDepthMean_map, nv_depth*depth_mask)
+            nearDepthMean_map = nearMean_map(nv_depth, (add_data["edges"]*depth_mask), kernelsize=3)
+            loss += self.optimzable_params.l_smooth * l2_loss(nearDepthMean_map[mask], (nv_depth*depth_mask)[mask])
         return loss, img_loss
 
     def verify(

@@ -10,7 +10,7 @@ from preprocess.preprocessor import segment_object, create_objects
 
 
 iterations = 20
-data = ["fountainD"]#, "fern", "horns"]
+data = ["fountainD", "fern", "horns", "room", "fortress"]
 
 
 def main():
@@ -50,7 +50,7 @@ def main():
 
                 max_distance = 0
                 g_data.sort()
-                print(g_data)
+                # print(g_data)
                 distances = []
                 for j in range(len(g_data) - 1):
                     n_1, th_1, i_1 = g_data[j]
@@ -59,13 +59,13 @@ def main():
                     if n_2 - n_1 > max_distance:
                         max_distance = n_2 - n_1
                         threshold = (th_1 + th_2) * 0.5
-                print(distances)
-                print(max_distance, threshold)
+                # print(distances)
+                # print(max_distance, threshold)
 
             print(threshold)
             image_path = record_path / f"{threshold}_{i}"
 
-            no_1, no_2, no_3 = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, threshold, image_path)
+            _, _, no_1, no_2, no_3 = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, threshold, image_path)
             gathered_data_1.append((no_1, threshold, i))
             gathered_data_2.append((no_2, threshold, i))
             gathered_data_3.append((no_3, threshold, i))

@@ -18,7 +18,7 @@ from .camera_constructor import create_camera_from_cam_file, create_camera_from_
 from .marigold_loader import load_depth_map
 from arguments import GroupParams, InitModel, CamModel, DepthModel
 from .object_segmenter import ObjectSegmenter
-from .segmentation import segment_object, create_objects
+from .segmentation import segment_object, create_objects, select_object
 
 
 class PreProcessor:
@@ -102,7 +102,7 @@ class PreProcessor:
                 for sfm_image in sfm_images.values():
                     name = sfm_image.name.split('.')[0]
                     add_data = {}
-                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.png", device)
+                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.jpg", device)
                     if not preprocess_params.no_alpha:
                         add_data["alpha"] = gt_alpha
 
@@ -191,7 +191,26 @@ class PreProcessor:
             # object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
             # object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
             segments_map, features_map, segments_mask_map = segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1)
-            create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, 0.75)
+            objects_map, obj_segments_dict, _, _, _ = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, 0.75)
+            img_masks, points = select_object(objects_map, obj_segments_dict, sfm_images, sfm_cameras, device)
+            for img_id in img_masks:
+                mask = img_masks[img_id]
+                name = sfm_images[img_id].name
+                name = name.split('.')[0]
+                image, cam, dict = data[name]
+                dict["mask"] = mask
+                data[name] = image, cam, dict
+
+            point_ids = []
+            for point_id in points:
+                point_ids.append(pid[point_id])
+            bp_points = point_cloud.points[point_ids]
+            bp_colors = point_cloud.colors[point_ids]
+            bp_normals = point_cloud.normals[point_ids]
+            bp_errors = point_cloud.errors[point_ids]
+            point_cloud = BasicPointCloud(bp_points, bp_colors, bp_normals, bp_errors)
+                    
+
 
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None

@@ -180,17 +180,18 @@ def segment_object(
     print()
 
     return segments_map, features_map, segments_mask_map
-    
-    
+
+
 def create_objects(
-    segments_map: dict[int, dict[int, list[int]]], 
-    features_map: dict[int, list[tuple[int, int]]], 
-    segments_mask_map: dict[int, dict[int, Tensor]], 
-    sfm_images: dict[int, Image], 
-    sfm_cameras: dict[int, Camera],
-    device: torch.device, 
-    feature_th: float = 0.1,
-    file_path: Optional[Path] = None):
+        segments_map: dict[int, dict[int, list[int]]], 
+        features_map: dict[int, list[tuple[int, int]]], 
+        segments_mask_map: dict[int, dict[int, Tensor]], 
+        sfm_images: dict[int, Image], 
+        sfm_cameras: dict[int, Camera],
+        device: torch.device, 
+        feature_th: float = 0.1,
+        file_path: Optional[Path] = None
+    ) -> tuple[dict[int, tuple[list[int], list[tuple[int, int]]]], dict[int, dict[int, Tensor]], int, int, int]:
     objects_map_1, objects_feature_map_1 = create_objects_1(segments_map, features_map, feature_th)
     objects_map_2, objects_feature_map_2 = create_objects_2(segments_map, features_map, feature_th)
     objects_map_3, objects_feature_map_3 = create_objects_3(segments_map, features_map, feature_th)
@@ -200,18 +201,24 @@ def create_objects(
     print(f"{len(objects_map_3)}: objects_3 created")
     print()
 
+    final_obj_segments_dict: dict[int, dict[int, Tensor]] = {}
+    final_objects_map: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
+
     # final images
     for i in range(3):
         if i == 0:
-            objects_map = objects_map_1
+            c_objects_map = objects_map_1
         elif i == 1:
-            objects_map = objects_map_2
+            c_objects_map = objects_map_2
         else:
-            objects_map = objects_map_3
+            c_objects_map = objects_map_3
+
+        objects_map: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
         obj_segments_dict: dict[int, dict[int, Tensor]] = {}
         obj_i = 0
-        for obj_id in objects_map:
-            _, obj_seg = objects_map[obj_id]
+        for obj_id in c_objects_map:
+            _, obj_seg = c_objects_map[obj_id]
+            objects_map[obj_i] = c_objects_map[obj_id]
             for img, seg in obj_seg:
                 if img not in obj_segments_dict:
                     obj_segments_dict[img] = {}
@@ -219,13 +226,48 @@ def create_objects(
                     obj_segments_dict[img][obj_i] = segments_mask_map[img][seg]
                 obj_segments_dict[img][obj_i] = torch.logical_or(obj_segments_dict[img][obj_i], segments_mask_map[img][seg])
             obj_i += 1
+        if i == 0:
+            final_objects_map = objects_map
+            final_obj_segments_dict = obj_segments_dict
         if file_path is not None:
             img_path = file_path / f"object_{i+1}"
             for img in obj_segments_dict:
                 camera = sfm_cameras[sfm_images[img].camera_id]
                 generate_segmentation_images(img_path, f"{img}", camera.width, camera.height, obj_segments_dict[img], device, True)
 
-        return len(objects_map_1), len(objects_map_2), len(objects_map_3)
+    return final_objects_map, final_obj_segments_dict, len(objects_map_1), len(objects_map_2), len(objects_map_3)
+
+
+def select_object(
+        objects_map: dict[int, tuple[list[int], list[tuple[int, int]]]],
+        obj_segments_dict: dict[int, dict[int, Tensor]],
+        sfm_images: dict[int, Image], 
+        sfm_cameras: dict[int, Camera],
+        device: torch.device
+    ) -> tuple[dict[int, Tensor], list[int]]:
+
+    points = []
+    img_masks = {}
+
+    for img_id in obj_segments_dict:
+        for obj_id in obj_segments_dict[img_id]:
+            camera = sfm_cameras[sfm_images[img_id].camera_id]
+            p_x, p_y = camera.width / 2, camera.height / 2
+            mask = obj_segments_dict[img_id][obj_id]
+            if mask[int(p_y),int(p_x)].item():
+                obj_points, _ = objects_map[obj_id]
+                points = remove_duplicates(points + obj_points)
+
+                if img_id not in img_masks:
+                    img_masks[img_id] = torch.zeros_like(mask, device=device)
+                img_masks[img_id] = torch.logical_or(img_masks[img_id], mask)
+
+    for img_id in img_masks:
+        image = img_masks[img_id]
+        save_img_from_tensor(image, f"masks", f"{img_id}") 
+
+    return img_masks, points
+
 
 def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
     neighbour_list = [(0, -1), (-1, -1), (-1, 0), (-1, 1)]  # todo check positions, (0,0) should be top left
@@ -693,7 +735,7 @@ def create_objects_3(
             finished_segments.add((img_id_1, seg_id_1))
 
     return objects_map, object_features_map
-                
+
 
 def remove_duplicates(l: list[any]) -> list[any]:
     return list(dict.fromkeys(l))
