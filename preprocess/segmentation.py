@@ -249,22 +249,24 @@ def select_object(
     points = []
     img_masks = {}
 
+    gathered_objects = []
     for img_id in obj_segments_dict:
         for obj_id in obj_segments_dict[img_id]:
             camera = sfm_cameras[sfm_images[img_id].camera_id]
             p_x, p_y = camera.width / 2, camera.height / 2
             mask = obj_segments_dict[img_id][obj_id]
             if mask[int(p_y),int(p_x)].item():
+                gathered_objects.append(obj_id)
                 obj_points, _ = objects_map[obj_id]
                 points = remove_duplicates(points + obj_points)
-
-                if img_id not in img_masks:
-                    img_masks[img_id] = torch.zeros_like(mask, device=device)
-                img_masks[img_id] = torch.logical_or(img_masks[img_id], mask)
-
-    for img_id in img_masks:
+    
+    for img_id in obj_segments_dict:
+        for obj_id in gathered_objects:
+            if img_id not in img_masks:
+                img_masks[img_id] = torch.zeros_like(mask, device=device)
+            img_masks[img_id] = torch.logical_or(img_masks[img_id], mask)
         image = img_masks[img_id]
-        save_img_from_tensor(image, f"masks", f"{img_id}") 
+        save_img_from_tensor(image, f"masks", f"{img_id}")    
 
     return img_masks, points
 
@@ -343,6 +345,28 @@ def configure_segment(
         mask = masks[segment_id]
         xy_mask = _C.extract_segment_features(mask, xys)
         segment_ipids = ipids[xy_mask.cpu()]
+
+        # if segment_id == 1:
+        #     img = mask[:,:,None].repeat(1,1,3)
+        #     red = torch.tensor([1.0,0.0,0.0], device=img.device)
+        #     green = torch.tensor([0.0,1.0,0.0], device=img.device)
+
+        #     print(xys.shape)
+        #     xy_list = xys.tolist()
+        #     for x, y in xy_list:
+        #         if y < img.shape[0] and x < img.shape[1]:
+        #             img[int(y), int(x)] = green
+
+        #     xy_list2 = xys[xy_mask.cpu()].tolist()
+        #     for x, y in xy_list2:
+        #         if y < img.shape[0] and x < img.shape[1]:
+        #             img[int(y), int(x)] = red
+
+        #     save_img_from_tensor(img, "masks_1", f"mask{segment_id}")
+
+        #     raise Exception("test")
+    
+
         feature_list = []
         for pid in segment_ipids:
             feature_list.append(pid)
@@ -360,7 +384,7 @@ def configure_segment(
         else:
             # masks.pop(segment_id)
             discarded_segments[segment_id] = mask
-
+    
     for segment_id in discarded_segments:
         masks.pop(segment_id)
     return segment_dict, discarded_segments, local_features, n_segments

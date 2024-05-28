@@ -191,7 +191,7 @@ class PreProcessor:
             # object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
             # object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
             segments_map, features_map, segments_mask_map = segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1)
-            objects_map, obj_segments_dict, _, _, _ = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, 0.75)
+            objects_map, obj_segments_dict, _, _, _ = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, 0.75, Path("segments/fortress"))
             img_masks, points = select_object(objects_map, obj_segments_dict, sfm_images, sfm_cameras, device)
             for img_id in img_masks:
                 mask = img_masks[img_id]
@@ -210,8 +210,6 @@ class PreProcessor:
             bp_errors = point_cloud.errors[point_ids]
             point_cloud = BasicPointCloud(bp_points, bp_colors, bp_normals, bp_errors)
                     
-
-
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None
         else:
@@ -232,7 +230,7 @@ class PreProcessor:
         gt_image[: height // 2, : width // 2, :] = torch.tensor([1.0, 0.0, 0.0], device=device)
         gt_image[height // 2:, width // 2:, :] = torch.tensor([0.0, 0.0, 1.0], device=device)
 
-        add_data = {}        
+        add_data = {}
         if not no_alpha:
             gt_alpha = torch.ones((height, width), device=device) * 1.0
             add_data["alpha"] = gt_alpha
