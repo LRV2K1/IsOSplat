@@ -246,24 +246,78 @@ def select_object(
         device: torch.device
     ) -> tuple[dict[int, Tensor], list[int]]:
 
+
     points = []
     img_masks = {}
 
-    gathered_objects = []
-    for img_id in obj_segments_dict:
-        for obj_id in obj_segments_dict[img_id]:
-            camera = sfm_cameras[sfm_images[img_id].camera_id]
-            p_x, p_y = camera.width / 2, camera.height / 2
-            mask = obj_segments_dict[img_id][obj_id]
-            if mask[int(p_y),int(p_x)].item():
-                gathered_objects.append(obj_id)
-                obj_points, _ = objects_map[obj_id]
-                points = remove_duplicates(points + obj_points)
-    
+    gathered_objects = set()
+    images = set()
+
+    # get highest scoring obj
+    while len(images) < len(obj_segments_dict):     # as long as not all images have a segment
+        centre_scores = {}
+        # calculate scores
+        for img_id in obj_segments_dict:
+            if img_id in images:
+                continue
+            for obj_id in obj_segments_dict[img_id]:
+                if obj_id in gathered_objects:
+                    continue
+                camera = sfm_cameras[sfm_images[img_id].camera_id]
+                p_x, p_y = camera.width / 2, camera.height / 2
+                mask = obj_segments_dict[img_id][obj_id]
+                if mask[int(p_y),int(p_x)].item():
+                    if obj_id not in centre_scores:
+                        centre_scores[obj_id] = 0
+                    centre_scores[obj_id] += 1
+
+        # get highest score
+        h_obj = 0
+        h_score = 0
+        for obj_id in centre_scores:
+            if centre_scores[obj_id] > h_score:
+                h_obj = obj_id
+                h_score = centre_scores[obj_id]
+
+        # add highest rated obj
+        gathered_objects.add(h_obj)
+        obj_points, _ = objects_map[h_obj]
+        points = remove_duplicates(points + obj_points)
+
+        # get size
+        c_size = 0
+        size_scores = {}
+        for img_id in obj_segments_dict:
+            if h_obj in obj_segments_dict[img_id]:
+                mask = obj_segments_dict[img_id][h_obj]
+                size = mask.count_nonzero()
+                size_scores[img_id] = size
+                c_size += size
+        f_size = c_size / len(size_scores)       
+
+        # record images
+        for img_id in obj_segments_dict:
+            if img_id in images:
+                continue
+            if h_obj in obj_segments_dict[img_id]:
+                if size_scores[img_id] > f_size / 2:
+                    images.add(img_id)
+
+        print(images)
+        print(h_score)
+        print(h_obj)
+        print(centre_scores)
+        
+        # raise Exception("test")
+
+    # get masks    
     for img_id in obj_segments_dict:
         for obj_id in gathered_objects:
+            if obj_id not in obj_segments_dict[img_id]:
+                continue
             if img_id not in img_masks:
                 img_masks[img_id] = torch.zeros_like(mask, device=device)
+            mask = obj_segments_dict[img_id][obj_id]
             img_masks[img_id] = torch.logical_or(img_masks[img_id], mask)
         image = img_masks[img_id]
         save_img_from_tensor(image, f"masks", f"{img_id}")    
