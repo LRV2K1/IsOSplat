@@ -303,13 +303,6 @@ def select_object(
                 if size_scores[img_id] > f_size / 2:
                     images.add(img_id)
 
-        print(images)
-        print(h_score)
-        print(h_obj)
-        print(centre_scores)
-        
-        # raise Exception("test")
-
     # get masks    
     for img_id in obj_segments_dict:
         for obj_id in gathered_objects:
