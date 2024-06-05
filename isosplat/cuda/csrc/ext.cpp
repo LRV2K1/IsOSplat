@@ -22,4 +22,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("closing", &closing);
     m.def("dilation", &dilation);
     m.def("erosion", &erosion);
+    m.def("filter", &filter);
 }

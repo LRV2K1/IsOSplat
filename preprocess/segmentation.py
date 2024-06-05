@@ -2,6 +2,7 @@ from pathlib import Path
 import numpy as np
 import os
 from typing import Optional
+import math
 
 import torch
 from torch import Tensor
@@ -29,6 +30,31 @@ def get_colors(device:torch.device) -> Tensor:
         ],
         device=device
     )
+
+# def get_filter(device:torch.device) -> Tensor:
+#     filter = torch.tensor(
+#         [
+#             [0.105, 0.197, 0.287, 0.325, 0.287, 0.197, 0.105],
+#             [0.197, 0.368, 0.535, 0.607, 0.535, 0.368, 0.197],
+#             [0.287, 0.535, 0.779, 0.882, 0.779, 0.535, 0.287],
+#             [0.325, 0.607, 0.882, 1.000, 0.882, 0.607, 0.325],
+#             [0.287, 0.535, 0.779, 0.882, 0.779, 0.535, 0.287],
+#             [0.197, 0.368, 0.535, 0.607, 0.535, 0.368, 0.197],
+#             [0.105, 0.197, 0.287, 0.325, 0.287, 0.197, 0.105]
+#         ],
+#         device=device
+#     )
+#     return filter / 3
+
+def gaussian(sigma, x, y):
+    return math.e ** (-((x**2 + y**2)/(2*sigma**2)))
+
+def get_filter(device:torch.device, sigma: float = 1.0) -> Tensor:
+    filter = torch.zeros(5, 5, device=device)
+    for x in range(filter.shape[0]):
+        for y in range(filter.shape[1]):
+            filter[x,y] = gaussian(sigma, x-2, y-2)
+    return filter
 
 
 def generate_segmentation_images(path: Path, name: str, width: int, height: int, segments: dict[int, Tensor], device: torch.device, indexed: bool = False, xys: Optional[Tensor] = None):
@@ -304,6 +330,7 @@ def select_object(
                     images.add(img_id)
 
     # get masks    
+    filter = get_filter(device)
     for img_id in obj_segments_dict:
         for obj_id in gathered_objects:
             if obj_id not in obj_segments_dict[img_id]:
@@ -312,6 +339,7 @@ def select_object(
                 img_masks[img_id] = torch.zeros_like(mask, device=device)
             mask = obj_segments_dict[img_id][obj_id]
             img_masks[img_id] = torch.logical_or(img_masks[img_id], mask)
+        img_masks[img_id] = _C.filter(filter, img_masks[img_id])
         image = img_masks[img_id]
         save_img_from_tensor(image, f"masks", f"{img_id}")    
 

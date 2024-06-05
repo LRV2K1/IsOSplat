@@ -34,3 +34,11 @@ __global__ void erosion(
     const bool* __restrict__ mask,
     bool* __restrict__ out_mask
 );
+
+__global__ void filter(
+    const int kernel_size,
+    const dim3 mask_size,
+    const float* __restrict__ kernel,
+    const bool* __restrict__ mask,
+    float* __restrict__ out_mask
+);

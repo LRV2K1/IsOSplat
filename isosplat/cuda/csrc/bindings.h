@@ -245,3 +245,9 @@ erosion(
         const torch::Tensor &kernel,
         const torch::Tensor &mask
     );
+
+torch::Tensor
+filter(
+        const torch::Tensor &kernel,
+        const torch::Tensor &mask
+    );

@@ -153,6 +153,7 @@ class OptimizationParams(ParamGroup):
         self.l_ssim = 0.2
         self.l_depth = 0.1
         self.l_smooth = 0.07
+        self.l_bounds = 1.0
 
         self.densification_interval = 100
         self.opacity_reset_interval = 3000

@@ -15,7 +15,7 @@ from .camera import Camera
 from scene.cameras import Camera
 from arguments import GroupParams
 from scene.gaussian_model import GaussianModel
-from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map
+from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map, bound_loss
 
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import image_rescale
@@ -164,9 +164,11 @@ class GaussianSplatting:
     def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None):
         n_data = len(data_list)
         iterations = self.optimzable_params.iterations
-        image_scale = 0.25
+        # image_scale = 0.25
+        image_scale = 1.0
 
-        use_data = self.rescale_data(data, image_scale)
+        # use_data = self.rescale_data(data, image_scale)
+        use_data = data
 
         data_queue = []
 
@@ -176,14 +178,14 @@ class GaussianSplatting:
             data_itr = 0
             lr = self.gaussian_model.update_learning_rate(itr)
             
-            if itr == 250:
-                print("rescale")
-                image_scale = 0.5
-                use_data = self.rescale_data(data, image_scale)
-            if itr == 500:
-                print("rescale")
-                image_scale = 1
-                use_data = data
+            # if itr == 250:
+            #     print("rescale")
+            #     image_scale = 0.5
+            #     use_data = self.rescale_data(data, image_scale)
+            # if itr == 500:
+            #     print("rescale")
+            #     image_scale = 1
+            #     use_data = data
 
             if itr % 1000 == 0:
                 self.gaussian_model.oneupSHdegree()
@@ -305,20 +307,26 @@ class GaussianSplatting:
             return out_img, out_depth, t0, t1
 
     def loss(self, gt_view: Tensor, nv_view: Tensor, nv_alpha: Tensor = None, nv_depth: Tensor = None, add_data: dict = None) -> tuple[Tensor, float]:
-        mask = torch.ones(gt_view.shape[0], gt_view.shape[1], dtype=torch.bool, device=gt_view.device)
+        mask = torch.ones(gt_view.shape[0], gt_view.shape[1], device=gt_view.device)
         if "mask" in add_data:
             mask = add_data["mask"]
         image_mask = mask[:,:,None].repeat(1,1,3)
+        alpha = torch.ones(gt_view.shape[0], gt_view.shape[1], device=gt_view.device)
+        if "alpha" in add_data:
+            alpha = add_data["alpha"]
+
         
-        loss = (1.0 - self.optimzable_params.l_ssim) * l1_loss(nv_view, gt_view * image_mask) \
-            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view, gt_view * image_mask))
+        loss = (1.0 - self.optimzable_params.l_ssim) * l1_loss(nv_view, gt_view, image_mask) \
+            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view * image_mask, gt_view * image_mask))
+
+        loss += self.optimzable_params.l_bounds * bound_loss(nv_alpha, alpha, mask)
         img_loss = loss.item()
         if "depth" in add_data and nv_depth is not None:
-            loss += self.optimzable_params.l_depth * l1_loss(nv_depth[mask], add_data["depth"][mask])
+            loss += self.optimzable_params.l_depth * l1_loss(nv_depth, add_data["depth"], mask)
         if "edges" in add_data and nv_depth is not None:
             depth_mask = (nv_depth>0).detach()
             nearDepthMean_map = nearMean_map(nv_depth, (add_data["edges"]*depth_mask), kernelsize=3)
-            loss += self.optimzable_params.l_smooth * l2_loss(nearDepthMean_map[mask], (nv_depth*depth_mask)[mask])
+            loss += self.optimzable_params.l_smooth * l2_loss(nearDepthMean_map, nv_depth*depth_mask, mask)
         return loss, img_loss
 
     def verify(

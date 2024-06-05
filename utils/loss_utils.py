@@ -14,11 +14,17 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
 
-def l1_loss(network_output, gt):
-    return torch.abs((network_output - gt)).mean()
+def l1_loss(network_output, gt, mask = None):
+    l1 = torch.abs((network_output - gt))
+    if mask is not None:
+        l1 *= mask
+    return l1.mean()
 
-def l2_loss(network_output, gt):
-    return ((network_output - gt) ** 2).mean()
+def l2_loss(network_output, gt, mask = None):
+    l2 = (network_output - gt) ** 2
+    if mask is not None:
+        l2 *= mask
+    return l2.mean()
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
@@ -90,3 +96,14 @@ def nearMean_map(array, mask, kernelsize=3):
     nearMean_map = (nearMean_map / (cnt_map+1e-8)).squeeze()
         
     return nearMean_map
+
+# def bound_loss(nv_alpha, mask):
+#     inverse_mask = ~mask
+#     nv_alpha_mask = nv_alpha[inverse_mask]
+
+#     return torch.abs(nv_alpha * inverse_mask).mean()
+
+def bound_loss(nv_alpha, gt_alpha, mask):
+    i_mask = 1 - mask
+
+    return (torch.abs((gt_alpha * mask) - nv_alpha) * i_mask).mean()

@@ -33,7 +33,7 @@ class PreProcessor:
         if data_path:
             self.img_path = data_path / "images"
             self.sfm_path = data_path / "sparse" / "0"
-            self.depth_path = data_path / "depth_npy"
+            self.depth_path = data_path / "depths"
             self.cams_path = data_path / "cams"
             self.depth_file_path = self.depth_path / "st.json"
             self.segment_path = data_path / "segments"
@@ -102,7 +102,7 @@ class PreProcessor:
                 for sfm_image in sfm_images.values():
                     name = sfm_image.name.split('.')[0]
                     add_data = {}
-                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.jpg", device)
+                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.png", device)
                     if not preprocess_params.no_alpha:
                         add_data["alpha"] = gt_alpha
 
@@ -151,7 +151,10 @@ class PreProcessor:
                 name = sfm_image.name.split('.')[0]
                 gt_image, camera, add_data = data[name]
 
-                npy_depth_map = load_depth_map(self.depth_path / f"{name}_pred.npy")
+                if os.path.exists(self.depth_path / f"{name}_pred.npy"):
+                    npy_depth_map = load_depth_map(self.depth_path / f"{name}_pred.npy")
+                else:
+                    npy_depth_map = load_depth_map(self.depth_path / f"{name}.npy")
                 depth_map, s, t = depth_map_normalizer.normalize_depth_map(
                     name=name,
                     depth_map=npy_depth_map,

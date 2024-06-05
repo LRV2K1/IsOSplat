@@ -152,3 +152,45 @@ __global__ void erosion(
     }
     out_mask[idx] = visible;
 }
+
+__global__ void filter(
+    const int kernel_size,
+    const dim3 mask_size,
+    const float* __restrict__ kernel,
+    const bool* __restrict__ mask,
+    float* __restrict__ out_mask
+) {
+    unsigned idx = cg::this_grid().thread_rank();
+    if (idx >= mask_size.x * mask_size.y)
+    {
+        return;
+    }
+
+    int offset = kernel_size / 2;
+
+    int32_t pix_x = idx % mask_size.x;
+    int32_t pix_y = idx / mask_size.x;
+
+    int kernel_inv_x = kernel_size - 1;
+    int kernel_inv_y = kernel_size - 1;
+
+    float value = 0.0;
+    for (int kx = 0; kx < kernel_size; kx++)
+    {
+        for (int ky = 0; ky < kernel_size; ky++)
+        {
+            int x = pix_x + (kx - offset);
+            int y = pix_y + (ky - offset);
+
+            int32_t pix_id = x + y * mask_size.x;
+            if (x < 0 || x >= mask_size.x || y < 0 || y >= mask_size.y)
+                continue;
+            if (!mask[pix_id])
+                continue;
+                
+            int k_id = (kernel_inv_x - kx) + (kernel_inv_y - ky) * kernel_size;
+            value += kernel[k_id];
+        }
+    }
+    out_mask[idx] = min(value, 1.0);
+}
