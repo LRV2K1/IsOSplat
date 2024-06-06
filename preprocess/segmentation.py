@@ -49,11 +49,11 @@ def get_colors(device:torch.device) -> Tensor:
 def gaussian(sigma, x, y):
     return math.e ** (-((x**2 + y**2)/(2*sigma**2)))
 
-def get_filter(device:torch.device, sigma: float = 1.0) -> Tensor:
-    filter = torch.zeros(5, 5, device=device)
+def get_filter(device:torch.device, size: int = 7, sigma: float = 1.0) -> Tensor:
+    filter = torch.zeros(size, size, device=device)
     for x in range(filter.shape[0]):
         for y in range(filter.shape[1]):
-            filter[x,y] = gaussian(sigma, x-2, y-2)
+            filter[x,y] = gaussian(sigma, x - filter.shape[0]/2, y - filter.shape[1]/2)
     return filter
 
 

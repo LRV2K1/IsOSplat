@@ -18,12 +18,14 @@ def l1_loss(network_output, gt, mask = None):
     l1 = torch.abs((network_output - gt))
     if mask is not None:
         l1 *= mask
+        l1 = l1[mask > 0]
     return l1.mean()
 
 def l2_loss(network_output, gt, mask = None):
     l2 = (network_output - gt) ** 2
     if mask is not None:
         l2 *= mask
+        l2 = l2[mask > 0]
     return l2.mean()
 
 def gaussian(window_size, sigma):
@@ -105,5 +107,5 @@ def nearMean_map(array, mask, kernelsize=3):
 
 def bound_loss(nv_alpha, gt_alpha, mask):
     i_mask = 1 - mask
-
-    return (torch.abs((gt_alpha * mask) - nv_alpha) * i_mask).mean()
+    l1 = (torch.abs((gt_alpha * mask) - nv_alpha) * i_mask)[i_mask > 0]
+    return l1.mean()
