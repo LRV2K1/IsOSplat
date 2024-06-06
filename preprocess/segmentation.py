@@ -53,7 +53,7 @@ def get_filter(device:torch.device, size: int = 7, sigma: float = 1.0) -> Tensor
     filter = torch.zeros(size, size, device=device)
     for x in range(filter.shape[0]):
         for y in range(filter.shape[1]):
-            filter[x,y] = gaussian(sigma, x - filter.shape[0]/2, y - filter.shape[1]/2)
+            filter[x,y] = gaussian(sigma, x - int(filter.shape[0]/2), y - int(filter.shape[1]/2))
     return filter
 
 
