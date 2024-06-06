@@ -572,7 +572,7 @@ def combine_segments(img_id: int, seg_id_1: int, seg_id_2: int, segment_dict: di
         if (img_id, seg_id_1) not in features_map[feature]:
             features_map[feature].append((img_id, seg_id_1))
 
-
+# objects grow with segments
 def create_objects_1(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
@@ -656,7 +656,7 @@ def create_objects_1(
 
     return objects_map, object_features_map
 
-
+# objects do not grow with segments, objects can be combined
 def create_objects_2(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
@@ -744,7 +744,7 @@ def create_objects_2(
 
     return objects_map, object_features_map
 
-
+# objects do not grow with segments, objects can not be combined
 def create_objects_3(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
