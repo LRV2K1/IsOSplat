@@ -42,9 +42,10 @@ class DepthMapNormalizer:
         depth_errors = torch.tensor(np.float32(errors), device=device)
         depth_errors = depth_errors[means_mask]
         depth_errors = torch.where(depth_errors > 1.0, depth_errors, 1.0)
+        depth_errors = 1.0 /  depth_errors[:,0]
 
         view = camera.get_view_matrix()
-        sparse_depths = (_get_depths(view, means) * (1.0 / depth_errors[:, 0]))
+        sparse_depths = _get_depths(view, means)
 
         dense_list = []
         for [x, y] in xys:
@@ -52,7 +53,7 @@ class DepthMapNormalizer:
 
         dense_depths = torch.tensor(dense_list, device=device)
 
-        s, t = self._argmin(sparse_depths, dense_depths, device)
+        s, t = self._argmin(sparse_depths, dense_depths, depth_errors, device)
         return s * depth_map + t, s, t
 
     @staticmethod
@@ -83,8 +84,11 @@ class DepthMapNormalizer:
         return s.item(), t.item()
 
     @staticmethod
-    def _argmin(sparse_depths: Tensor, dense_depths: Tensor, device: torch.device) -> tuple[float, float]:
+    def _argmin(sparse_depths: Tensor, dense_depths: Tensor, errors: Tensor, device: torch.device) -> tuple[float, float]:
+        sparse_depths *= errors
         sparse_depths = sparse_depths[:, None]
+
+        dense_depths *= errors
         dense_depths = dense_depths[:, None]
         dense_depths = torch.cat((dense_depths, torch.ones_like(dense_depths, device=device)), 1)
         dense_depths_t = torch.transpose(dense_depths, 0, 1)
