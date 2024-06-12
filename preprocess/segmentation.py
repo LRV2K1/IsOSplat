@@ -234,8 +234,8 @@ def create_objects(
     print(f"{len(objects_map_1)}: objects_1 created")
     objects_map_2, objects_feature_map_2 = create_objects_2(segments_map, features_map, feature_th, a_score)
     print(f"{len(objects_map_2)}: objects_2 created")
-    objects_map_3, objects_feature_map_3 = create_objects_3(segments_map, features_map, feature_th, a_score)
-    print(f"{len(objects_map_3)}: objects_3 created")
+    # objects_map_3, objects_feature_map_3 = create_objects_3(segments_map, features_map, feature_th, a_score)
+    # print(f"{len(objects_map_3)}: objects_3 created")
     print()
 
     final_obj_segments_dict_1: dict[int, dict[int, Tensor]] = {}
@@ -246,13 +246,13 @@ def create_objects(
     final_objects_map_3: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
 
     # final images
-    for i in range(3):
+    for i in range(2):
         if i == 0:
             c_objects_map = objects_map_1
         elif i == 1:
             c_objects_map = objects_map_2
-        else:
-            c_objects_map = objects_map_3
+        # else:
+        #     c_objects_map = objects_map_3
 
         objects_map: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
         obj_segments_dict: dict[int, dict[int, Tensor]] = {}
@@ -278,9 +278,9 @@ def create_objects(
         elif i == 1:
             final_objects_map_2 = objects_map
             final_obj_segments_dict_2 = obj_segments_dict
-        elif i == 2:
-            final_objects_map_3 = objects_map
-            final_obj_segments_dict_3 = obj_segments_dict
+        # elif i == 2:
+        #     final_objects_map_3 = objects_map
+        #     final_obj_segments_dict_3 = obj_segments_dict
         if file_path is not None:
             img_path = file_path / f"object_{i+1}" / "combined"
             for img in obj_segments_dict:
@@ -520,7 +520,7 @@ def add_descarded_segments(segments: dict[int, Tensor], discarded_segments: list
             overlap = torch.logical_and(dsegment, segment)
             n_overlap_n = torch.count_nonzero(overlap_n).item()
             n_overlap = torch.count_nonzero(overlap).item()
-            m_overlpa_n = 0 if max_overlap_n in None else max_overlap_n
+            m_overlpa_n = 0 if max_overlap_n is None else max_overlap_n
             m_overlap = 0 if max_overlap is None else max_overlap[1]
             if n_overlap_n > m_overlpa_n:
                 max_overlap_n = n_overlap_n
@@ -664,7 +664,7 @@ def create_objects_1(
         # segment_queue.sort()
     #   pick first object
         size_1, obj_id_1 = objects_queue.pop()
-        if obj_id_1 in combined_segments:
+        if obj_id_1 in combined_segments or obj_id_1 in checked_segments:
             continue
         features_1, segments_1 = objects_map[obj_id_1]
 
@@ -752,6 +752,8 @@ def create_objects_2(
         # segment_queue.sort()
     #   pick first object
         sort_score, img_id_1, seg_id_1 = objects_queue.pop()
+        if (img_id_1, seg_id_1) in checked_segments:
+            continue
         obj_id_1 = object_segment_map[(img_id_1, seg_id_1)]
         features_1 = segments_map[img_id_1][seg_id_1]
         size_1 = len(features_1)
