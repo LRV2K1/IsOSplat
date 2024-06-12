@@ -123,12 +123,16 @@ def segment_object(
         device: torch.device,
 
         descarded_segments_th: float = 0.1,
-        local_feature_th: float = 0.1) -> tuple[dict[int, dict[int, list[int]]], dict[int, list[tuple[int, int]]], dict[int, dict[int, Tensor]]]:
+        local_feature_th: float = 0.1,
+        a_score: bool = False,
+        save_path: Optional[Path] = None) -> tuple[dict[int, dict[int, list[int]]], dict[int, list[tuple[int, int, int]]], dict[int, dict[int, Tensor]], list[tuple[str, int, int, int, int, int, int, int, int, int, int]]]:
     print("Segmenting objects")
 
     features_map: dict[int, list[tuple[int, int]]] = {}
     segments_map: dict[int, dict[int, list[int]]] = {}
     segments_mask_map: dict[int, dict[int, Tensor]] = {}
+
+    seg_data = []
 
 #   for every image
     for sfm_image in sfm_images.values():
@@ -166,9 +170,14 @@ def segment_object(
         print(f"{initial_seg}: segments extracted")
 
 #       missing segments <- generate missing segments
+        if save_path is not None:
+            save_img_from_tensor(total_mask, save_path, f"{image_id}_total_mask") 
         closed_total_mask = _C.closing(closing_kernel(device), total_mask)
         torch.cuda.synchronize()
+        if save_path is not None:
+            save_img_from_tensor(closed_total_mask, save_path, f"{image_id}_closed_mask") 
         missing_segments = region_mapping(closed_total_mask, device)
+        missing_segments_2 = region_mapping(total_mask, device)
 
         missing_seg = len(missing_segments)
         print(f"{missing_seg} missing regions extracted")
@@ -190,12 +199,12 @@ def segment_object(
         print(f"{discarded_seg}/{total_seg}: segments discarded")
 
 #       some way of adding segments without features
-        added_seg = add_descarded_segments(segments, discarded_segments, descarded_segments_th, device)
+        added_seg, added_seg_2 = add_descarded_segments(segments, discarded_segments, descarded_segments_th, device)
 
         print(f"{added_seg}/{discarded_seg}: discarded segments added")
 
 #       combine segments in image
-        combined_seg = combine_image_segments(image_id, segments, segment_dict, local_features, features_map, local_feature_th)
+        combined_seg = combine_image_segments(image_id, segments, segment_dict, local_features, features_map, local_feature_th, a_score)
 
         print(f"{combined_seg}: segments combined")
         print(f"{len(segment_dict)}: final total segments")
@@ -203,9 +212,11 @@ def segment_object(
         segments_map[image_id] = segment_dict
         segments_mask_map[image_id] = segments
 
+        seg_data.append((name, image_id, initial_seg, missing_seg, missing_segments_2, total_seg, created_seg, discarded_seg, added_seg, added_seg_2, combined_seg, len(segment_dict)))
+
     print()
 
-    return segments_map, features_map, segments_mask_map
+    return segments_map, features_map, segments_mask_map, seg_data
 
 
 def create_objects(
@@ -216,19 +227,23 @@ def create_objects(
         sfm_cameras: dict[int, Camera],
         device: torch.device, 
         feature_th: float = 0.1,
+        a_score: bool = False,
         file_path: Optional[Path] = None
     ) -> tuple[dict[int, tuple[list[int], list[tuple[int, int]]]], dict[int, dict[int, Tensor]], int, int, int]:
-    objects_map_1, objects_feature_map_1 = create_objects_1(segments_map, features_map, feature_th)
-    objects_map_2, objects_feature_map_2 = create_objects_2(segments_map, features_map, feature_th)
-    objects_map_3, objects_feature_map_3 = create_objects_3(segments_map, features_map, feature_th)
-    
+    objects_map_1, objects_feature_map_1 = create_objects_1(segments_map, features_map, feature_th, a_score)
     print(f"{len(objects_map_1)}: objects_1 created")
+    objects_map_2, objects_feature_map_2 = create_objects_2(segments_map, features_map, feature_th, a_score)
     print(f"{len(objects_map_2)}: objects_2 created")
+    objects_map_3, objects_feature_map_3 = create_objects_3(segments_map, features_map, feature_th, a_score)
     print(f"{len(objects_map_3)}: objects_3 created")
     print()
 
-    final_obj_segments_dict: dict[int, dict[int, Tensor]] = {}
-    final_objects_map: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
+    final_obj_segments_dict_1: dict[int, dict[int, Tensor]] = {}
+    final_objects_map_1: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
+    final_obj_segments_dict_2: dict[int, dict[int, Tensor]] = {}
+    final_objects_map_2: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
+    final_obj_segments_dict_3: dict[int, dict[int, Tensor]] = {}
+    final_objects_map_3: dict[int, tuple[list[int], list[tuple[int, int]]]] = {}
 
     # final images
     for i in range(3):
@@ -252,16 +267,27 @@ def create_objects(
                     obj_segments_dict[img][obj_i] = segments_mask_map[img][seg]
                 obj_segments_dict[img][obj_i] = torch.logical_or(obj_segments_dict[img][obj_i], segments_mask_map[img][seg])
             obj_i += 1
-        if i == 0:
-            final_objects_map = objects_map
-            final_obj_segments_dict = obj_segments_dict
         if file_path is not None:
-            img_path = file_path / f"object_{i+1}"
+            for img in obj_segments_dict:
+                for obj_id in obj_segments_dict[img]:
+                        img_path = file_path / f"object_{i+1}" / "segments"
+                        save_img_from_tensor(obj_segments_dict[img][obj_id], img_path, f"{img}_{obj_id}") 
+        if i == 0:
+            final_objects_map_1 = objects_map
+            final_obj_segments_dict_1 = obj_segments_dict
+        elif i == 1:
+            final_objects_map_2 = objects_map
+            final_obj_segments_dict_2 = obj_segments_dict
+        elif i == 2:
+            final_objects_map_3 = objects_map
+            final_obj_segments_dict_3 = obj_segments_dict
+        if file_path is not None:
+            img_path = file_path / f"object_{i+1}" / "combined"
             for img in obj_segments_dict:
                 camera = sfm_cameras[sfm_images[img].camera_id]
                 generate_segmentation_images(img_path, f"{img}", camera.width, camera.height, obj_segments_dict[img], device, True)
 
-    return final_objects_map, final_obj_segments_dict, len(objects_map_1), len(objects_map_2), len(objects_map_3)
+    return final_objects_map_1, final_obj_segments_dict_1, final_objects_map_2, final_obj_segments_dict_2, final_objects_map_3, final_obj_segments_dict_3, len(objects_map_1), len(objects_map_2), len(objects_map_3)
 
 
 def select_object(
@@ -269,7 +295,9 @@ def select_object(
         obj_segments_dict: dict[int, dict[int, Tensor]],
         sfm_images: dict[int, Image], 
         sfm_cameras: dict[int, Camera],
-        device: torch.device
+        device: torch.device,
+        selected_path: Optional[Path] = None,
+        final_path: Optional[Path] = None
     ) -> tuple[dict[int, Tensor], list[int]]:
 
 
@@ -280,7 +308,9 @@ def select_object(
     images = set()
 
     # get highest scoring obj
+    n_obj = 0
     while len(images) < len(obj_segments_dict):     # as long as not all images have a segment
+        n_obj += 1
         centre_scores = {}
         # calculate scores
         for img_id in obj_segments_dict:
@@ -305,6 +335,9 @@ def select_object(
                 h_obj = obj_id
                 h_score = centre_scores[obj_id]
 
+        if h_score == 0:
+            break
+
         # add highest rated obj
         gathered_objects.add(h_obj)
         obj_points, _ = objects_map[h_obj]
@@ -314,9 +347,11 @@ def select_object(
         c_size = 0
         size_scores = {}
         for img_id in obj_segments_dict:
+            if img_id in images:
+                continue
             if h_obj in obj_segments_dict[img_id]:
                 mask = obj_segments_dict[img_id][h_obj]
-                size = mask.count_nonzero()
+                size = mask.count_nonzero().item()
                 size_scores[img_id] = size
                 c_size += size
         f_size = c_size / len(size_scores)       
@@ -339,11 +374,14 @@ def select_object(
                 img_masks[img_id] = torch.zeros_like(mask, device=device)
             mask = obj_segments_dict[img_id][obj_id]
             img_masks[img_id] = torch.logical_or(img_masks[img_id], mask)
+        if selected_path is not None:
+            save_img_from_tensor(img_masks[img_id], selected_path, f"{img_id}") 
         img_masks[img_id] = _C.filter(filter, img_masks[img_id])
         image = img_masks[img_id]
-        save_img_from_tensor(image, f"masks", f"{img_id}")    
+        if final_path is not None:
+            save_img_from_tensor(image, final_path, f"{img_id}")    
 
-    return img_masks, points
+    return img_masks, points, n_obj
 
 
 def region_mapping(mask: Tensor, device: torch.device) -> list[Tensor]:
@@ -465,20 +503,31 @@ def configure_segment(
     return segment_dict, discarded_segments, local_features, n_segments
 
 
-def add_descarded_segments(segments: dict[int, Tensor], discarded_segments: list[int], threshold: float, device: torch.device) -> int:
+def add_descarded_segments(segments: dict[int, Tensor], discarded_segments: list[int], threshold: float, device: torch.device) -> tuple[int, int]:
     overlaps: list[tuple[int, Tensor]] = []
 
     for dsegment_id in discarded_segments:
         max_overlap: Optional[tuple[int, int]] = None
+        max_overlap_n: Optional[int] = None
+        overlaps_n = 0
+
+        dsegment_n = discarded_segments[dsegment_id]
         dsegment = _C.dilation(growing_kernel(device), discarded_segments[dsegment_id])
         n_dsegment = torch.count_nonzero(dsegment).item()
         for segment_id in segments:
             segment = segments[segment_id]
+            overlap_n = torch.logical_and(dsegment_n, segment)
             overlap = torch.logical_and(dsegment, segment)
+            n_overlap_n = torch.count_nonzero(overlap_n).item()
             n_overlap = torch.count_nonzero(overlap).item()
+            m_overlpa_n = 0 if max_overlap_n in None else max_overlap_n
             m_overlap = 0 if max_overlap is None else max_overlap[1]
+            if n_overlap_n > m_overlpa_n:
+                max_overlap_n = n_overlap_n
             if n_overlap > m_overlap:
-                max_overlap = segment_id, m_overlap
+                max_overlap = segment_id, n_overlap
+        if max_overlap_n is not None:
+            overlaps_n += 1
         if max_overlap is not None and float(max_overlap[1])/n_dsegment >= threshold:
             segment_id, _ = max_overlap
             overlaps.append((segment_id, dsegment))
@@ -489,7 +538,7 @@ def add_descarded_segments(segments: dict[int, Tensor], discarded_segments: list
         segment = segments[segment_id]
         segments[segment_id] = torch.logical_or(segment, dsegment)
 
-    return len(overlaps)
+    return len(overlaps), overlaps_n
 
 
 def combine_image_segments(
@@ -498,7 +547,8 @@ def combine_image_segments(
         segment_dict: dict[int, list[int]], 
         local_features: dict[int, list[int]], 
         features_map: dict[int, list[tuple[int, int]]], 
-        feature_th: float) -> int:
+        feature_th: float,
+        a_score: bool = False) -> int:
     checked_segments = set()
     combined_segments = set()
 
@@ -536,7 +586,10 @@ def combine_image_segments(
             i_score = size_o / ((size_1 + size_2) - size_o)
             # new score
             n_score = ((size_o / size_1) ** 2) + ((size_o /  size_2) ** 2)
-            matching_feature_scores.append((n_score, seg_id_2))
+            if not a_score:
+                matching_feature_scores.append((n_score, seg_id_2))
+            else:
+                matching_feature_scores.append((i_score, seg_id_2))
         matching_feature_scores.sort()
 
     #   if highest score >= threshold:
@@ -576,7 +629,8 @@ def combine_segments(img_id: int, seg_id_1: int, seg_id_2: int, segment_dict: di
 def create_objects_1(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
-        feature_th: float
+        feature_th: float,
+        a_score: bool = False
         ) -> tuple[dict[int, tuple[list[int], list[tuple[int, int]]]], dict[int, list[int]]]:
     # create objects
     object_segment_map: dict[tuple[int, int], int] = {}
@@ -599,7 +653,7 @@ def create_objects_1(
     combined_segments = set()
 
     # determine order
-    objects_queue: list[tuple[int, int, int, int]] = []
+    objects_queue: list[tuple[int, int]] = []
     for obj_id in objects_map:
         objects_queue.append((len(objects_map[obj_id][0]), obj_id))
     objects_queue.sort()
@@ -633,7 +687,10 @@ def create_objects_1(
             i_score = size_o / ((size_1 + size_2) - size_o)
             # new score
             n_score = ((size_o / size_1) ** 2) + ((size_o /  size_2) ** 2)
-            matching_feature_scores.append((n_score, obj_id_2))
+            if not a_score:
+                matching_feature_scores.append((n_score, obj_id_2))
+            else:
+                matching_feature_scores.append((i_score, obj_id_2))
         matching_feature_scores.sort()
 
     #   if highest score >= threshold:
@@ -660,7 +717,8 @@ def create_objects_1(
 def create_objects_2(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
-        feature_th: float
+        feature_th: float,
+        a_score: bool = False
         ) -> tuple[dict[int, tuple[list[int], list[tuple[int, int]]]], dict[int, list[int]]]:
     # create objects
     object_segment_map: dict[tuple[int, int], int] = {}
@@ -718,7 +776,10 @@ def create_objects_2(
             i_score = size_o / ((size_1 + size_2) - size_o)
             # new score
             n_score = ((size_o / size_1) ** 2) + ((size_o /  size_2) ** 2)
-            matching_feature_scores.append((n_score, (img_id_2, seg_id_2)))
+            if not a_score:
+                matching_feature_scores.append((n_score, (img_id_2, seg_id_2)))
+            else:
+                matching_feature_scores.append((i_score, (img_id_2, seg_id_2)))
         matching_feature_scores.sort()
 
     #   if highest score >= threshold:
@@ -748,7 +809,8 @@ def create_objects_2(
 def create_objects_3(
         segments_map: dict[int, dict[int, list[int]]], 
         features_map: dict[int, list[tuple[int, int]]], 
-        feature_th: float
+        feature_th: float,
+        a_score: bool = False
         ) -> tuple[dict[int, tuple[list[int], list[tuple[int, int]]]], dict[int, list[int]]]:
     # create objects
     object_features_map: dict[int, list[int]] = {}
@@ -804,7 +866,10 @@ def create_objects_3(
             i_score = size_o / ((size_1 + size_2) - size_o)
             # new score
             n_score = ((size_o / size_1) ** 2) + ((size_o /  size_2) ** 2)
-            matching_feature_scores.append((n_score, (img_id_2, seg_id_2)))
+            if not a_score:
+                matching_feature_scores.append((n_score, (img_id_2, seg_id_2)))
+            else:
+                matching_feature_scores.append((i_score, (img_id_2, seg_id_2)))
         matching_feature_scores.sort()
 
     #   if highest score >= threshold:

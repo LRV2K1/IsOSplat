@@ -21,9 +21,9 @@ ImageData = NewType('ImageData', tuple[str, int, tuple[float, float, float], tup
 
 class SFM:
     def __init__(self, img_path: Path):
-        self.img_path: Path = img_path
-        self.sfm_path: Path = img_path / "sfm"
-        self.sfm_text_path: Path = img_path / "sfm_txt"
+        self.img_path: Path = img_path / "images"
+        self.sfm_path: Path = img_path / "sparse"
+        self.sfm_text_path: Path = img_path / "sparse_txt"
         self.db_path: Path = self.sfm_path / "database.db"
 
         self.reconstruction: pycolmap.Reconstruction = None
@@ -72,7 +72,10 @@ class SFM:
             self.reconstruction = pycolmap.Reconstruction(self.sfm_path / "0")
         except:
             raise Exception("SFM could not reconstruct the data")
+        
 
+        if not self.sfm_text_path.exists():
+            self.sfm_text_path.mkdir(exist_ok=True)
         self.reconstruction.write_text(self.sfm_text_path)
 
     def _sfm(self, clean: bool = False):
