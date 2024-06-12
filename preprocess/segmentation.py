@@ -177,7 +177,7 @@ def segment_object(
         if save_path is not None:
             save_img_from_tensor(closed_total_mask, save_path, f"{image_id}_closed_mask") 
         missing_segments = region_mapping(closed_total_mask, device)
-        missing_segments_2 = region_mapping(total_mask, device)
+        missing_segments_2 = len(region_mapping(total_mask, device))
 
         missing_seg = len(missing_segments)
         print(f"{missing_seg} missing regions extracted")
@@ -287,7 +287,7 @@ def create_objects(
                 camera = sfm_cameras[sfm_images[img].camera_id]
                 generate_segmentation_images(img_path, f"{img}", camera.width, camera.height, obj_segments_dict[img], device, True)
 
-    return final_objects_map_1, final_obj_segments_dict_1, final_objects_map_2, final_obj_segments_dict_2, final_objects_map_3, final_obj_segments_dict_3, len(objects_map_1), len(objects_map_2), len(objects_map_3)
+    return final_objects_map_1, final_obj_segments_dict_1, final_objects_map_2, final_obj_segments_dict_2, final_objects_map_3, final_obj_segments_dict_3, len(objects_map_1), len(objects_map_2), 0 #len(objects_map_3)
 
 
 def select_object(

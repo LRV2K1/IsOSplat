@@ -10,7 +10,7 @@ from preprocess.preprocessor import segment_object, create_objects, select_objec
 
 
 iterations = 2
-data = ["fountainD"] #, "fernD", "hornsD", "roomD", "fortressD", "leavesD", "flowerD", "orchidsD", "trexD"]
+data = ["fountainD", "fernD", "roomD", "fortressD", "leavesD", "flowerD", "orchidsD", "trexD", "hornsD"]
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
 
     with open(g_record_path / "g_records.csv", "a", newline='') as record_file:
         writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(["name", "score", "initial_seg", "missing_seg", "non_cl_missing_seg", "total_seg", "created_seg", "discarded_seg", "added_seg", "combined_seg", "final_seg"])
+        writer.writerow(["name", "score", "initial_seg", "missing_seg", "non_cl_missing_seg", "total_seg", "created_seg", "discarded_seg", "added_seg", "non_cl_added_seg", "combined_seg", "final_seg"])
 
     a_score = False
     for i in range(2):
@@ -53,7 +53,7 @@ def main():
 
             with open(record_path / "s_records.csv", "a", newline='') as record_file:
                 writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                writer.writerow(["img_id", "img_name", "initial_seg", "missing_seg", "non_cl_missing_seg", "total_seg", "created_seg", "discarded_seg", "added_seg", "combined_seg", "final_seg"])
+                writer.writerow(["img_id", "img_name", "initial_seg", "missing_seg", "non_cl_missing_seg", "total_seg", "created_seg", "discarded_seg", "added_seg", "non_cl_added_seg", "combined_seg", "final_seg"])
 
             sfm_images = read_extrinsics_binary(sfm_path / "images.bin")
             sfm_cameras = read_intrinsics_binary(sfm_path / "cameras.bin")
@@ -66,13 +66,14 @@ def main():
             t_created_seg = 0
             t_discarded_seg = 0
             t_added_seg = 0
+            t_non_cl_added_seg = 0
             t_combined_seg = 0
             t_final_seg = 0
 
             with open(record_path / "s_records.csv", "a", newline='') as record_file:
                 writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                for  (name, img_id, initial_seg, missing_seg, non_cl_missing_seg, total_seg, created_seg, discarded_seg, added_seg, combined_seg, final_seg) in seg_data:
-                    writer.writerow([img_id, name, initial_seg, missing_seg, non_cl_missing_seg, total_seg, created_seg, discarded_seg, added_seg, combined_seg, final_seg])
+                for  (name, img_id, initial_seg, missing_seg, non_cl_missing_seg, total_seg, created_seg, discarded_seg, added_seg, non_cl_added_seg, combined_seg, final_seg) in seg_data:
+                    writer.writerow([img_id, name, initial_seg, missing_seg, non_cl_missing_seg, total_seg, created_seg, discarded_seg, added_seg, non_cl_added_seg, combined_seg, final_seg])
                     t_initial_seg += initial_seg
                     t_missing_seg += missing_seg
                     t_non_cl_missing_seg += non_cl_missing_seg
@@ -80,12 +81,13 @@ def main():
                     t_created_seg += created_seg
                     t_discarded_seg += discarded_seg
                     t_added_seg += added_seg
+                    t_non_cl_added_seg += non_cl_added_seg
                     t_combined_seg += combined_seg
                     t_final_seg += final_seg
 
             with open(g_record_path / "g_records.csv", "a", newline='') as record_file:
                 writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                writer.writerow([d, score_type, t_initial_seg, t_missing_seg, t_non_cl_missing_seg, t_total_seg, t_created_seg, t_discarded_seg, t_added_seg, t_combined_seg, t_final_seg])
+                writer.writerow([d, score_type, t_initial_seg, t_missing_seg, t_non_cl_missing_seg, t_total_seg, t_created_seg, t_discarded_seg, t_added_seg, t_non_cl_added_seg, t_combined_seg, t_final_seg])
 
             # [n_objects, threshold, iteration]
             gathered_data_1: list[tuple[int, float, int]] = []
@@ -137,7 +139,7 @@ def main():
                 with open(record_path / "records.csv", "a", newline='') as record_file:
                     writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
                     writer.writerow([no_1, no_2, ob_1, ob_2, threshold, i])
-                    
+
         a_score = True
 
 if __name__ == '__main__':
