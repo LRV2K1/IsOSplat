@@ -16,6 +16,8 @@ from scene.cameras import Camera
 from arguments import GroupParams
 from scene.gaussian_model import GaussianModel
 from utils.loss_utils import l1_loss, l2_loss, ssim, nearMean_map, bound_loss
+from utils.image_utils import psnr
+from lpipsPyTorch import lpips
 
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import image_rescale
@@ -24,6 +26,7 @@ from isosplat import render
 
 from .project_gaussians import _ProjectGaussians
 from .rasterize import _RasterizeGaussians
+from preprocess.image_loader import save_img_from_tensor
 
 
 class GaussianSplatting:
@@ -161,7 +164,7 @@ class GaussianSplatting:
             use_data[name] = new_view, cam, new_add_data
         return use_data
 
-    def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None):
+    def train(self, data_list: DataList, data: Data, logger: Optional[CSVLogger] = None, save_path: Optional[Path] = None):
         n_data = len(data_list)
         iterations = self.optimzable_params.iterations
         # image_scale = 0.25
@@ -192,12 +195,17 @@ class GaussianSplatting:
 
             bg = torch.rand(3, device=self.device) if self.optimzable_params.random_background else self.background
 
-            random.shuffle(data_list)
-            for name in data_list:
-            # if len(data_queue) == 0:
-            #     data_queue = data_list.copy()
-            #     random.shuffle(data_queue)
-            # name = data_queue.pop()
+            if itr == 7002 and save_path is not None:
+                self.verify(data_list=data_list, data=data, save_path=save_path/f"{itr-2}", logger=logger)
+                self.save(save_path=save_path/f"{itr}")
+
+            # random.shuffle(data_list)
+            # for name in data_list:
+            if len(data_queue) == 0:
+                data_queue = data_list.copy()
+                random.shuffle(data_queue)
+            name = data_queue.pop()
+            if name is not None:
             
                 gt_view, camera, add_data = use_data[name]
 
@@ -220,8 +228,8 @@ class GaussianSplatting:
                 self.times[1] += t1
                 self.times[2] += t2
 
-                print(f"Iteration {itr}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
-                # print(f"Iteration {itr}/{iterations}, Loss: {loss.item()}")
+                # print(f"Iteration {itr}/{iterations}, Data: {data_itr + 1}/{n_data}, Loss: {loss.item()}")
+                print(f"Iteration {itr}/{iterations}, Loss: {loss.item()}")
                 data_itr += 1
 
                 with torch.no_grad():
@@ -262,6 +270,10 @@ class GaussianSplatting:
             if logger is not None:
                 logger.log_scalar("average_image_loss", average_image_loss, itr)
                 logger.log_scalar("average_loss", average_loss, itr)
+
+        if save_path is not None:
+            self.verify(data_list=data_list, data=data, save_path=save_path/f"{iterations}", logger=logger)
+            self.save(save_path=save_path/f"{iterations}")
 
     def save(self, save_path: Path):
         if not os.path.exists(save_path):
@@ -317,9 +329,11 @@ class GaussianSplatting:
 
         
         loss = (1.0 - self.optimzable_params.l_ssim) * l1_loss(nv_view, gt_view, image_mask) \
-            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view * image_mask, gt_view * image_mask))
+            + self.optimzable_params.l_ssim * (1.0 - ssim(nv_view.permute(2,0,1) * image_mask.permute(2,0,1), gt_view.permute(2,0,1) * image_mask.permute(2,0,1)))
 
-        loss += self.optimzable_params.l_bounds * bound_loss(nv_alpha, alpha, mask)
+        if "mask" in add_data:
+            loss += self.optimzable_params.l_bounds * bound_loss(nv_alpha, alpha, mask)
+            
         img_loss = loss.item()
         if "depth" in add_data and nv_depth is not None:
             loss += self.optimzable_params.l_depth * l1_loss(nv_depth, add_data["depth"], mask)
@@ -365,27 +379,58 @@ class GaussianSplatting:
 
         with torch.no_grad():
             final_loss = {}
+            
+            psnr_score, ssim_score, lpips_score = 0.0, 0.0, 0.0
             for name in data_list:
                 gt_view, camera, add_data = data[name]
                 bg_depth = 20.0
                 if "bg_depth" in add_data:
                     bg_depth = add_data["bg_depth"]
 
-                nv_view, nv_alpha, nv_depth, _, _ = render(camera, self.gaussian_model, background_depth=bg_depth)
+                color = torch.tensor([1.0, 1.0, 1.0], device = gt_view.device)
+                nv_view, nv_alpha, nv_depth, _, _ = render(camera, self.gaussian_model, background_depth=bg_depth, color=color)
                 loss, img_loss = self.loss(gt_view, nv_view, nv_alpha, nv_depth, add_data)
+
+                mask = torch.ones(gt_view.shape[0], gt_view.shape[1], device=gt_view.device)
+                if "mask" in add_data:
+                    mask = add_data["mask"]
+                image_mask = mask[:,:,None].repeat(1,1,3).permute(2,0,1)
+                p_nv_view = nv_view.permute(2,0,1)
+                p_gt_view = gt_view.permute(2,0,1)
+                p_gt_view = p_gt_view * image_mask + torch.ones_like(p_gt_view) * (1- image_mask)   # set background white
+                
+
+                psnr_s, ssim_s, lpips_s = 0.0, 0.0, 0.0
+                psnr_s = psnr(p_nv_view, p_gt_view).mean().double().item()
+                ssim_s = ssim(p_nv_view, p_gt_view).mean().double().item()
+                lpips_s = lpips(p_nv_view, p_gt_view).mean().double().item()
+
+                psnr_score += psnr_s
+                ssim_score += ssim_s
+                lpips_score += lpips_s
 
                 average_loss += img_loss
                 print(f"Image: {name}, Loss:{loss.item()}")
                 print(f"Image: {name}, Img_Loss:{img_loss}")
+                print(f"Image: {name}, psnr:{psnr_s}")
+                print(f"Image: {name}, ssim:{ssim_s}")
+                print(f"Image: {name}, lpips:{lpips_s}")
+
                 if logger is not None:
                     final_loss[f"loss: {name}"] = loss.item()
                     final_loss[f"image loss: {name}"] = img_loss
+                    final_loss[f"image psnr: {name}"] = psnr_s
+                    final_loss[f"image ssim: {name}"] = ssim_s
+                    final_loss[f"image lpips: {name}"] = lpips_s
                 if save_path:
                     if not os.path.exists(save_path):
                         os.makedirs(save_path)
 
-                    image = Image.fromarray((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
-                    image.save(f"{save_path}/{name}_render.png")
+                    save_img_from_tensor(nv_view, save_path, f"{name}_render")
+                    save_img_from_tensor(p_gt_view.permute(1,2,0), save_path, f"{name}_gt")
+                    
+                    # image = Image.fromarray((nv_view.detach().cpu().numpy() * 255).astype(np.uint8))
+                    # image.save(f"{save_path}/{name}_render.png")
 
                     norm_depth = nv_depth - nv_depth.min()
                     m = norm_depth.max()
@@ -394,8 +439,13 @@ class GaussianSplatting:
                     else:
                         norm_depth = norm_depth + 1.0
 
-                    depth_image = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
-                    depth_image.save(f"{save_path}/{name}_depth.png")
+                    save_img_from_tensor(norm_depth, save_path, f"{name}_depth")
+
+                    # depth_image = Image.fromarray((norm_depth.detach().cpu().numpy() * 255).astype(np.uint8))
+                    # depth_image.save(f"{save_path}/{name}_depth.png")
             if logger is not None:
+                final_loss[f"total psnr"] = psnr_score /len(data_list)
+                final_loss[f"total ssim"] = ssim_score /len(data_list)
+                final_loss[f"total lpips"] = lpips_score /len(data_list)
                 logger.log_hparams(final_loss)
         return average_loss / len(data_list)

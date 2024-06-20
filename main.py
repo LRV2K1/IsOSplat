@@ -57,7 +57,8 @@ def main(
         optimization_params=optimization_params,
         splats=preprocess_params.splats,
         device=device,
-        logger=logger)
+        logger=logger,
+        save_path=save_path)
         
     loss = verify(
         trainer=trainer,
@@ -92,7 +93,8 @@ def train(
         optimization_params: GroupParams,
         splats: int,
         device: torch.device,
-        logger: Optional[CSVLogger] = None
+        logger: Optional[CSVLogger] = None,
+        save_path: Optional[Path] = None
 ) -> GaussianSplatting:
     trainer = GaussianSplatting(device)
 
@@ -102,7 +104,8 @@ def train(
         trainer.train(
             data_list=data_list,
             data=data,
-            logger=logger
+            logger=logger,
+            save_path=save_path
         )
     return trainer
 

@@ -76,6 +76,7 @@ class ParamGroup:
                     setattr(group, arg[0], arg[1])
                 else:
                     setattr(group, arg[0], vars(self)[arg[0]])
+                # setattr(group, arg[0], vars(self)[arg[0]])
         return group
     
     def _load_dictionary(self, params: dict[str, any]):
@@ -131,6 +132,7 @@ class PreProcessParams(ParamGroup):
         self.cam_model = "NoCam"
 
         self.no_alpha = True
+        self.no_segments = False
 
         self.edge_low = 0.3
         self.edge_high = 0.8

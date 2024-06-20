@@ -19,6 +19,7 @@ from .marigold_loader import load_depth_map
 from arguments import GroupParams, InitModel, CamModel, DepthModel
 from .object_segmenter import ObjectSegmenter
 from .segmentation import segment_object, create_objects, select_object
+from utils.loss_utils import image2canny
 
 
 class PreProcessor:
@@ -29,7 +30,7 @@ class PreProcessor:
         self.cams_path = None
         self.depth_file_path = None
         self.segment_path = None
-        
+
         if data_path:
             self.img_path = data_path / "images"
             self.sfm_path = data_path / "sparse" / "0"
@@ -37,12 +38,14 @@ class PreProcessor:
             self.cams_path = data_path / "cams"
             self.depth_file_path = self.depth_path / "st.json"
             self.segment_path = data_path / "segments"
+            self.pre_segment_path = data_path / "pre-segments"
 
         self.has_img = self.img_path is not None and os.path.exists(self.img_path)
         self.has_sfm = self.sfm_path is not None and os.path.exists(self.sfm_path)
         self.has_depth = self.depth_path is not None and os.path.exists(self.depth_path)
         self.has_cams = self.cams_path is not None and os.path.exists(self.cams_path)
         self.has_depth_file = self.depth_file_path is not None and os.path.exists(self.depth_file_path)
+        self.has_pre_segments = self.pre_segment_path is not None and os.path.exists(self.pre_segment_path)
 
     def preprocess_data(
             self, device: torch.device,
@@ -102,10 +105,13 @@ class PreProcessor:
                 for sfm_image in sfm_images.values():
                     name = sfm_image.name.split('.')[0]
                     add_data = {}
-                    gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.png", device)
+                    try:
+                        gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.png", device)
+                    except:
+                        gt_image, gt_alpha = image_path_to_tensor(self.img_path / f"{name}.jpg", device)
                     if not preprocess_params.no_alpha:
                         add_data["alpha"] = gt_alpha
-
+                    
                     sfm_camera = sfm_cameras[sfm_image.camera_id]
                     camera = create_camera_from_sfm_data(sfm_camera, sfm_image, device)
 
@@ -140,7 +146,8 @@ class PreProcessor:
         if not DepthModel[preprocess_params.depth_model] == DepthModel.NoDepth:
             for name in data_list:
                 gt_image, camera, add_data = data[name]
-                edge_map = edge_detector.calculate_edge_map(name, gt_image, device)
+                # edge_map = edge_detector.calculate_edge_map(name, gt_image, device)
+                edge_map = image2canny(gt_image, 50, 150, isEdge1=False).detach().to(device=device)
                 add_data["edges"] = edge_map
                 data[name] = gt_image, camera, add_data
                 # save_img_from_tensor(edge_map, "edges", name)
@@ -189,13 +196,16 @@ class PreProcessor:
         if logger is not None:
             logger.log_hparams(depth_parameters)
 
-        if sfm_images is not None:
+        if sfm_images is not None and not self.has_pre_segments and not preprocess_params.no_segments:
             # object_segmenter = ObjectSegmenter(self.segment_path)
             # object_segmenter.segment_objects(data, pid, point_cloud, sfm_images, device)
             # object_segmenter.segment_objects_new(data, pid, point_cloud, sfm_images, device)
-            segments_map, features_map, segments_mask_map = segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1)
-            objects_map, obj_segments_dict, _, _, _ = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, 0.75, Path("segments/fortress"))
-            img_masks, points = select_object(objects_map, obj_segments_dict, sfm_images, sfm_cameras, device)
+            segments_map, features_map, segments_mask_map, _ = segment_object(self.segment_path, sfm_images, sfm_cameras, device, 0.00, 0.1)
+            objects_map, obj_segments_dict, _, _, _, _, _, _, _ = create_objects(segments_map, features_map, segments_mask_map, sfm_images, sfm_cameras, device, 0.75)
+            img_masks, points, _ = select_object(objects_map, obj_segments_dict, sfm_images, sfm_cameras, device)
+
+            os.makedirs(self.pre_segment_path)
+
             for img_id in img_masks:
                 mask = img_masks[img_id]
                 name = sfm_images[img_id].name
@@ -203,6 +213,9 @@ class PreProcessor:
                 image, cam, dict = data[name]
                 dict["mask"] = mask
                 data[name] = image, cam, dict
+
+                np_mask = mask.detach().cpu().numpy()
+                np.save(self.pre_segment_path / f"{name}.npy", np_mask)
 
             point_ids = []
             for point_id in points:
@@ -212,7 +225,31 @@ class PreProcessor:
             bp_normals = point_cloud.normals[point_ids]
             bp_errors = point_cloud.errors[point_ids]
             point_cloud = BasicPointCloud(bp_points, bp_colors, bp_normals, bp_errors)
-                    
+
+            np_points_ids = np.array(point_ids)
+            np.save(self.pre_segment_path / "points.npy", np_points_ids)
+
+        if self.has_pre_segments and not preprocess_params.no_segments:
+            print("Loading pre-segments")
+            np_points_ids = np.load(self.pre_segment_path / "points.npy")
+            bp_points = point_cloud.points[np_points_ids]
+            bp_colors = point_cloud.colors[np_points_ids]
+            bp_normals = point_cloud.normals[np_points_ids]
+            bp_errors = point_cloud.errors[np_points_ids]
+            point_cloud = BasicPointCloud(bp_points, bp_colors, bp_normals, bp_errors)
+
+            for img_id in sfm_images:
+                name = sfm_images[img_id].name
+                name = name.split('.')[0]
+                print(f"pre-segment: {name}")
+                np_mask = np.load(self.pre_segment_path / f"{name}.npy")
+                mask = torch.tensor(np_mask, device=device)
+                
+                image, cam, dict = data[name]
+                dict["mask"] = mask
+                data[name] = image, cam, dict
+
+
         if InitModel[preprocess_params.init_model] == InitModel.Random:
             return data_list, data, None
         else:

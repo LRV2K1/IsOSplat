@@ -107,5 +107,5 @@ def nearMean_map(array, mask, kernelsize=3):
 
 def bound_loss(nv_alpha, gt_alpha, mask):
     i_mask = 1 - mask
-    l1 = (torch.abs(gt_alpha - nv_alpha) * i_mask)[i_mask > 0]
+    l1 = (torch.abs(nv_alpha - gt_alpha * mask) * i_mask)[i_mask > 0]
     return l1.mean()

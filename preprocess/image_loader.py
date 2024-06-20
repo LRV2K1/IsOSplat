@@ -21,7 +21,7 @@ def image_path_to_tensor(image_path: Path, device: torch.device, image_scale = 1
     if img_transform.shape[0] > 3:
         img_alpha_tensor = img_transform.permute(1, 2, 0)[..., 3]
     else:
-        img_alpha_tensor = torch.ones(img_tensor.shape[0], img_tensor.shape[0]) * 1.0
+        img_alpha_tensor = torch.ones(img_tensor.shape[0], img_tensor.shape[1]) * 1.0
     img_tensor = img_tensor.to(device=device)
     img_alpha_tensor = img_alpha_tensor.to(device=device)
     return img_tensor, img_alpha_tensor

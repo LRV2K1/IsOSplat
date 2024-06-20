@@ -9,8 +9,8 @@ from preprocess.colmap_loader import read_extrinsics_binary, read_intrinsics_bin
 from preprocess.preprocessor import segment_object, create_objects, select_object
 
 
-iterations = 2
-data = ["fountainD", "fernD", "roomD", "fortressD", "leavesD", "flowerD", "orchidsD", "trexD", "hornsD"]
+iterations = 80
+data = ["fountainD", "fernD", "roomD", "fortressD", "leavesD", "flowerD", "orchidsD", "trexD", "hornsD"] #
 
 
 def main():
@@ -23,15 +23,15 @@ def main():
 
     with open(g_record_path / "g_records.csv", "a", newline='') as record_file:
         writer = csv.writer(record_file, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(["name", "score", "initial_seg", "missing_seg", "non_cl_missing_seg", "total_seg", "created_seg", "discarded_seg", "added_seg", "non_cl_added_seg", "combined_seg", "final_seg"])
+        # writer.writerow(["name", "score", "initial_seg", "missing_seg", "non_cl_missing_seg", "total_seg", "created_seg", "discarded_seg", "added_seg", "non_cl_added_seg", "combined_seg", "final_seg"])
 
-    a_score = False
-    for i in range(2):
+    a_score = True
+    for i in range(1):
         score_type = "IoU"
         if not a_score:
             score_type = "SQI"
         for d in data:
-            print(d)
+            print(f"{d}-{score_type}")
 
             sfm_path = Path(f"train_data/{d}/sparse/0")
             segment_path = Path(f"train_data/{d}/segments")
