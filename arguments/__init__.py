@@ -72,11 +72,11 @@ class ParamGroup:
         group = GroupParams()
         for arg in vars(args).items():
             if arg[0] in vars(self) or ("_" + arg[0]) in vars(self):
-                if arg[1] is not None:
-                    setattr(group, arg[0], arg[1])
-                else:
-                    setattr(group, arg[0], vars(self)[arg[0]])
-                # setattr(group, arg[0], vars(self)[arg[0]])
+                # if arg[1] is not None:
+                #     setattr(group, arg[0], arg[1])
+                # else:
+                #     setattr(group, arg[0], vars(self)[arg[0]])
+                setattr(group, arg[0], vars(self)[arg[0]])
         return group
     
     def _load_dictionary(self, params: dict[str, any]):
